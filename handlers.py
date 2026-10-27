@@ -1,10 +1,22 @@
 import os
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from database import add_item, get_items, mark_done, delete_item, get_weekly_summary
 from categorizer import CATEGORY_LABELS, CATEGORY_EMOJIS
 from ai import process_with_ai
+
+
+async def _keep_typing(chat):
+    """إبقاء علامة يكتب الآن ظاهرة طوال فترة تفكير الذكاء الاصطناعي"""
+    while True:
+        try:
+            await chat.send_action(ChatAction.TYPING)
+        except Exception:
+            pass
+        await asyncio.sleep(3.5)
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -38,9 +50,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    # Gemini بيفهم الرسالة
-    await update.message.chat.send_action("typing")
-    result = await process_with_ai(text, user_id)
+    # تشغيل علامة 'يكتب الآن...' في الخلفية باستمرار
+    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
+    try:
+        result = await process_with_ai(text, user_id)
+    finally:
+        typing_task.cancel()
 
     category = result["category"]
     content  = result["content"]
