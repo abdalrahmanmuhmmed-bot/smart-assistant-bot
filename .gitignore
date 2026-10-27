@@ -1,0 +1,7 @@
+# ملفات مش محتاجين نرفعهم على GitHub
+.env
+assistant.db
+__pycache__/
+*.pyc
+*.pyo
+*.db
