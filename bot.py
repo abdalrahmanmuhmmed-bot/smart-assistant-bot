@@ -1,35 +1,39 @@
 import os
 import asyncio
+import logging
 from dotenv import load_dotenv
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
 )
 
 from database import init_db
+from scheduler import reminder_worker
 from handlers import (
     start,
+    briefing_cmd,
+    list_tasks_cmd,
+    list_reminders_cmd,
+    expenses_cmd,
+    memory_cmd,
     handle_message,
-    handle_callback,
-    list_all,
-    list_tasks,
-    list_ideas,
-    list_expenses,
-    list_goals,
-    summary,
-    done_cmd,
-    delete_cmd,
+    handle_voice,
 )
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 PORT  = int(os.getenv("PORT", 8080))
 
 
-# ── Simple Built-in Health check server for Render (Zero external dependencies) ──
+# ── Built-in Health check server for Render ──────────────────────────────────
 async def handle_http(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     try:
         while True:
@@ -58,48 +62,53 @@ async def handle_http(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 async def run_web_server():
     try:
         server = await asyncio.start_server(handle_http, "0.0.0.0", PORT)
-        print(f"[WEB] Built-in health server running on port {PORT}")
+        logger.info(f"[WEB] Built-in health check server listening on port {PORT}")
         return server
     except OSError as e:
-        print(f"[WEB WARNING] Could not bind port {PORT}: {e}. Continuing bot execution...")
+        logger.warning(f"[WEB WARNING] Could not bind port {PORT}: {e}. Continuing bot execution...")
         return None
 
 
 async def main():
     if not TOKEN or TOKEN == "ضع_التوكن_هنا":
-        print("[ERROR] No token found! Set BOT_TOKEN environment variable.")
+        logger.error("[ERROR] No BOT_TOKEN found! Check your .env file.")
         return
 
     init_db()
-    print("[OK] Database ready.")
+    logger.info("[DB] Database and tables verified.")
 
-    # تشغيل سيرفر الـ health check
+    # تشغيل خادم المراقبة للبورت
     await run_web_server()
 
-    # تشغيل البوت
+    # بناء تطبيق التيليجرام
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start",    start))
-    app.add_handler(CommandHandler("list",     list_all))
-    app.add_handler(CommandHandler("tasks",    list_tasks))
-    app.add_handler(CommandHandler("ideas",    list_ideas))
-    app.add_handler(CommandHandler("expenses", list_expenses))
-    app.add_handler(CommandHandler("goals",    list_goals))
-    app.add_handler(CommandHandler("summary",  summary))
-    app.add_handler(CommandHandler("done",     done_cmd))
-    app.add_handler(CommandHandler("delete",   delete_cmd))
+    # تسجيل الأوامر
+    app.add_handler(CommandHandler("start",     start))
+    app.add_handler(CommandHandler("help",      start))
+    app.add_handler(CommandHandler("briefing",  briefing_cmd))
+    app.add_handler(CommandHandler("tasks",     list_tasks_cmd))
+    app.add_handler(CommandHandler("reminders", list_reminders_cmd))
+    app.add_handler(CommandHandler("expenses",  expenses_cmd))
+    app.add_handler(CommandHandler("memory",    memory_cmd))
 
+    # تسجيل الرسايل النصية والصوتية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    print("[BOT] Polling started...")
+    logger.info("[BOT] Starting Telegram polling & background reminder worker...")
     async with app:
         await app.start()
         await app.updater.start_polling()
-        await asyncio.Event().wait()
+
+        # تشغيل محرك التنبيهات في الخلفية
+        reminder_task = asyncio.create_task(reminder_worker(app))
+
+        try:
+            await asyncio.Event().wait()
+        finally:
+            reminder_task.cancel()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

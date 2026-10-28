@@ -1,16 +1,21 @@
 import os
+import io
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import logging
+from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
+from google import genai
+from google.genai import types
 
-from database import add_item, get_items, mark_done, delete_item, get_weekly_summary
-from categorizer import CATEGORY_LABELS, CATEGORY_EMOJIS
-from ai import process_with_ai
+import database
+from ai_agent import UserAIAgent
+
+logger = logging.getLogger(__name__)
 
 
 async def _keep_typing(chat):
-    """إبقاء علامة يكتب الآن ظاهرة طوال فترة تفكير الذكاء الاصطناعي"""
+    """إبقاء علامة يكتب الآن ظاهرة طوال فترة تفكير ومعالجة الذكاء الاصطناعي"""
     while True:
         try:
             await chat.send_action(ChatAction.TYPING)
@@ -21,194 +26,163 @@ async def _keep_typing(chat):
 
 # ── /start ─────────────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "أهلاً! 👋 أنا مساعدك الشخصي.\n\n"
-        "بعتلي أي حاجة وأنا هصنفها لوحدي:\n"
-        "✅ مهام  💡 أفكار  💰 مصاريف  🎯 أهداف\n\n"
-        "أو ابدأ بـ emoji عشان تحدد التصنيف بنفسك:\n"
-        "  ✅ لازم أراجع الملف\n"
-        "  💡 فكرة عن مشروع جديد\n"
-        "  💰 صرفت 150 على أكل\n"
-        "  🎯 أوصل لـ 10k متابع\n\n"
-        "الأوامر:\n"
-        "/list – اعرض كل حاجة\n"
-        "/tasks – المهام بس\n"
-        "/ideas – الأفكار\n"
-        "/expenses – المصاريف\n"
-        "/goals – الأهداف\n"
-        "/summary – ملخص سريع\n"
-        "/done [رقم] – خلص مهمة\n"
-        "/delete [رقم] – امسح عنصر"
+    welcome_msg = (
+        "أهلاً بيك يا فندم! 👋 أنا مساعدك وسكرتيرك الشخصي.\n\n"
+        "أنا هنا عشان أنظملك حياتك ومهامك ومواعيدك، وأفتكر كل التفاصيل المهمة.\n\n"
+        "تقدر تكلمني بصوتك أو كتابة بأي طريقة تحبها:\n"
+        "• 'فكرني بكرة الساعة 5 أذاكر فيزيا'\n"
+        "• 'ضيف مهمة تسليم التقرير يوم الخميس لأولويات الكلية'\n"
+        "• 'صرفت 120 جنيه غدا النهاردة'\n"
+        "• 'فكرة: نعمل مشروع ذكاء اصطناعي لكذا'\n"
+        "• 'أنا بفضل أذاكر الفجر (هحفظها في ذاكرتك الدائمة)'\n\n"
+        "الأوامر السريعة:\n"
+        "/briefing – ملخصك اليومي وأولوياتك\n"
+        "/tasks – قائمة المهام النشطة\n"
+        "/reminders – التنبيهات المجدولة\n"
+        "/expenses – ملخص المصاريف\n"
+        "/memory – الحاجات اللي فاكرها عنك\n"
+        "/help – دليل الاستخدام"
     )
+    await update.message.reply_text(welcome_msg)
 
 
-# ── رسايل عادية → Gemini بيفهم ويصنف ─────────────────────────────────────
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ── /briefing ──────────────────────────────────────────────────────────────
+async def briefing_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text.strip()
-
-    if text.startswith("/"):
-        return
-
-    # تشغيل علامة 'يكتب الآن...' في الخلفية باستمرار
     typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
     try:
-        result = await process_with_ai(text, user_id)
+        agent = UserAIAgent(user_id)
+        reply = await agent.process_message("جهزلي الملخص اليومي (Daily Briefing) للنهاردة بأهم الأولويات والتنبيهات والمهام القادمة")
+        await update.message.reply_text(reply)
     finally:
         typing_task.cancel()
 
-    category = result["category"]
-    content  = result["content"]
-    amount   = result["amount"]
-    reply    = result["reply"]
-    suggestion = result["suggestion"]
 
-    item_id = add_item(user_id, category, content, amount)
-    label   = CATEGORY_LABELS[category]
-
-    # أزرار تصحيح التصنيف
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ مهمة", callback_data=f"recat:{item_id}:task"),
-            InlineKeyboardButton("💡 فكرة", callback_data=f"recat:{item_id}:idea"),
-        ],
-        [
-            InlineKeyboardButton("💰 مصروف", callback_data=f"recat:{item_id}:expense"),
-            InlineKeyboardButton("🎯 هدف",   callback_data=f"recat:{item_id}:goal"),
-        ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # بناء الرسالة
-    full_reply = f"{reply}\n\n_{label}  •  #{item_id}_"
-    if suggestion:
-        full_reply += f"\n\n💬 {suggestion}"
-
-    await update.message.reply_text(full_reply, reply_markup=reply_markup, parse_mode="Markdown")
-
-
-# ── Callback: إعادة تصنيف ─────────────────────────────────────────────────
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    if data.startswith("recat:"):
-        _, item_id, new_cat = data.split(":")
-        item_id = int(item_id)
-        user_id = update.effective_user.id
-
-        # جلب النص الأصلي وتحديث الكاتيجوري
-        from database import DB_PATH
-        import sqlite3
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT content FROM items WHERE id=? AND user_id=?", (item_id, user_id))
-        row = c.fetchone()
-        if row:
-            from categorizer import detect_amount
-            amount = detect_amount(row[0]) if new_cat == "expense" else None
-            c.execute(
-                "UPDATE items SET category=?, amount=? WHERE id=? AND user_id=?",
-                (new_cat, amount, item_id, user_id)
-            )
-            conn.commit()
-            label = CATEGORY_LABELS[new_cat]
-            await query.edit_message_text(f"تم تغيير التصنيف إلى {label} ✔️\n#{item_id}")
-        else:
-            await query.edit_message_text("مش لاقي العنصر ده.")
-        conn.close()
-
-    elif data.startswith("done:"):
-        item_id = int(data.split(":")[1])
-        user_id = update.effective_user.id
-        if mark_done(user_id, item_id):
-            await query.edit_message_text(f"✅ تم! #{item_id} اتخلص")
-        else:
-            await query.edit_message_text("مش لاقي العنصر ده.")
-
-
-# ── عرض القوائم ───────────────────────────────────────────────────────────
-def _format_list(rows: list, title: str) -> str:
-    if not rows:
-        return f"{title}\n\nمفيش حاجة هنا لحد دلوقتي 😌"
-    lines = [title, ""]
-    for row in rows:
-        item_id, cat, content, amount, created_at = row
-        emoji = CATEGORY_EMOJIS.get(cat, "•")
-        date = created_at[:10]
-        line = f"{emoji} #{item_id}  {content}"
-        if amount:
-            line += f"  ({amount:.0f})"
-        line += f"  _[{date}]_"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-async def list_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ── /tasks ─────────────────────────────────────────────────────────────────
+async def list_tasks_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    rows = get_items(user_id)
-    await update.message.reply_text(_format_list(rows, "📋 كل حاجة عندك:"), parse_mode="Markdown")
-
-
-async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    rows = get_items(user_id, "task")
-    await update.message.reply_text(_format_list(rows, "✅ المهام:"), parse_mode="Markdown")
-
-
-async def list_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    rows = get_items(user_id, "idea")
-    await update.message.reply_text(_format_list(rows, "💡 الأفكار:"), parse_mode="Markdown")
-
-
-async def list_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    rows = get_items(user_id, "expense")
-    await update.message.reply_text(_format_list(rows, "💰 المصاريف:"), parse_mode="Markdown")
-
-
-async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    rows = get_items(user_id, "goal")
-    await update.message.reply_text(_format_list(rows, "🎯 الأهداف:"), parse_mode="Markdown")
-
-
-# ── ملخص ─────────────────────────────────────────────────────────────────
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = get_weekly_summary(user_id)
-    text = (
-        "📊 ملخصك الآن:\n\n"
-        f"✅ مهام متراكمة: {s['task']}\n"
-        f"💡 أفكار محفوظة: {s['idea']}\n"
-        f"🎯 أهداف شغالة: {s['goal']}\n"
-        f"💰 مصاريف مسجلة: {s['expense']}  (مجموع: {s['total_expenses']:.0f})\n"
-    )
-    await update.message.reply_text(text)
-
-
-# ── /done و /delete ────────────────────────────────────────────────────────
-async def done_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    args = context.args
-    if not args or not args[0].isdigit():
-        await update.message.reply_text("استخدم: /done [رقم]\nمثال: /done 5")
+    tasks = database.list_tasks(user_id)
+    if not tasks:
+        await update.message.reply_text("معندكش أي مهام متأخرة أو معلقة حالياً، عاش! 🎉")
         return
-    if mark_done(user_id, int(args[0])):
-        await update.message.reply_text(f"✅ #{args[0]} اتخلص!")
-    else:
-        await update.message.reply_text("مش لاقي العنصر ده.")
+
+    lines = ["📋 *قائمة مهامك الحالية:*", ""]
+    priority_emojis = {"Critical": "🔥", "High": "⚡", "Medium": "📌", "Low": "☕"}
+
+    for t in tasks:
+        emoji = priority_emojis.get(t["priority"], "📌")
+        deadline_str = f" ⏳ _{t['deadline']}_" if t["deadline"] else ""
+        lines.append(f"{emoji} *#{t['id']}* {t['title']} ({t['project']}){deadline_str}")
+
+    lines.append("\n_تقدر تقولي 'خلصت مهمة رقم كذا' أو 'احذف مهمة كذا'_")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
-async def delete_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ── /reminders ─────────────────────────────────────────────────────────────
+async def list_reminders_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    args = context.args
-    if not args or not args[0].isdigit():
-        await update.message.reply_text("استخدم: /delete [رقم]\nمثال: /delete 5")
+    rems = database.list_pending_reminders(user_id)
+    if not rems:
+        await update.message.reply_text("مفيش أي تنبيهات مجدولة في الوقت الحالي 😌")
         return
-    if delete_item(user_id, int(args[0])):
-        await update.message.reply_text(f"🗑️ #{args[0]} اتمسح.")
-    else:
-        await update.message.reply_text("مش لاقي العنصر ده.")
+
+    lines = ["⏰ *التنبيهات المجدولة القادمة:*", ""]
+    for r in rems:
+        dt_str = r["remind_at"].replace("T", " ")[:16]
+        recur_str = " (تكرار يومي)" if r["recurring"] == "daily" else ""
+        lines.append(f"• *#{r['id']}* {r['reminder_text']}\n  📅 {dt_str}{recur_str}")
+
+    lines.append("\n_تقدر تقولي 'الغي التنبيه رقم كذا'_")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+# ── /expenses ──────────────────────────────────────────────────────────────
+async def expenses_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    s = database.get_expenses_summary(user_id)
+    total = s["total"]
+    count = s["count"]
+    recent = s["recent"]
+
+    lines = [f"💰 *ملخص المصاريف:*", f"إجمالي ما تم تسجيله: *{total:.1f} EGP* ({count} عملية)", ""]
+    if recent:
+        lines.append("*آخر عمليات:*")
+        for e in recent:
+            lines.append(f"• {e['amount']} {e['currency']} — {e['description']} ({e['category']})")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+# ── /memory ────────────────────────────────────────────────────────────────
+async def memory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mems = database.list_memories(user_id)
+    if not mems:
+        await update.message.reply_text("لسه مسجلتش أي تفضيلات أو معلومات ثابتة في ذاكرتي. قولي مثلاً 'أنا بفضل كذا' وهسجلها.")
+        return
+
+    lines = ["🧠 *المعلومات والتفضيلات المحفوظة في ذاكرتي الدائمة:*", ""]
+    for m in mems:
+        lines.append(f"• [{m['category']}] {m['content']}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+# ── معالجة الرسايل النصية ──────────────────────────────────────────────────
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    if text.startswith("/"):
+        return
+
+    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
+    try:
+        agent = UserAIAgent(user_id)
+        reply = await agent.process_message(text)
+        await update.message.reply_text(reply)
+    except Exception as e:
+        logger.error(f"[HANDLE_MESSAGE ERROR] {e}")
+        await update.message.reply_text("عذراً، حصلت مشكلة صغيرة أثناء معالجة الرسالة.")
+    finally:
+        typing_task.cancel()
+
+
+# ── معالجة الرسايل الصوتية (Voice Notes) ────────────────────────────────────
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
+
+    try:
+        voice = update.message.voice
+        file = await context.bot.get_file(voice.file_id)
+        voice_bytes = await file.download_as_bytearray()
+
+        # استخراج النص من الصوت باستخدام Gemini Multimodal
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        audio_part = types.Part.from_bytes(
+            data=bytes(voice_bytes),
+            mime_type="audio/ogg"
+        )
+
+        transcription_resp = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=[
+                audio_part,
+                "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
+            ]
+        )
+        transcribed_text = transcription_resp.text.strip()
+        logger.info(f"[VOICE] Transcribed user {user_id}: {transcribed_text}")
+
+        # معالجة النص المنطوق كرسالة عادية
+        agent = UserAIAgent(user_id)
+        reply = await agent.process_message(transcribed_text)
+
+        full_reply = f"🎙️ *سمعتك بتقول:*\n\"{transcribed_text}\"\n\n{reply}"
+        await update.message.reply_text(full_reply, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"[VOICE ERROR] {e}")
+        await update.message.reply_text(f"عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح: {e}")
+    finally:
+        typing_task.cancel()
