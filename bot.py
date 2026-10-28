@@ -1,6 +1,8 @@
 import os
 import asyncio
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from telegram.ext import (
     ApplicationBuilder,
@@ -33,36 +35,30 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT  = int(os.getenv("PORT", 8080))
 
 
-# ── Built-in Health check server for Render ──────────────────────────────────
-async def handle_http(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    try:
-        while True:
-            line = await reader.readline()
-            if not line or line == b"\r\n" or line == b"\n":
-                break
-        response = (
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: text/plain; charset=utf-8\r\n"
-            b"Content-Length: 2\r\n"
-            b"Connection: close\r\n\r\n"
-            b"OK"
-        )
-        writer.write(response)
-        await writer.drain()
-    except Exception:
+# ── Built-in Robust Health check server for Render & UptimeRobot ──────────────
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        # منع إزعاج الـ terminal بطلبات الـ ping المستمرة
         pass
-    finally:
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
 
 
-async def run_web_server():
+def start_health_server():
     try:
-        server = await asyncio.start_server(handle_http, "0.0.0.0", PORT)
-        logger.info(f"[WEB] Built-in health check server listening on port {PORT}")
+        server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        logger.info(f"[WEB] Robust health check server listening on port {PORT}")
         return server
     except OSError as e:
         logger.warning(f"[WEB WARNING] Could not bind port {PORT}: {e}. Continuing bot execution...")
@@ -77,8 +73,8 @@ async def main():
     init_db()
     logger.info("[DB] Database and tables verified.")
 
-    # تشغيل خادم المراقبة للبورت
-    await run_web_server()
+    # تشغيل خادم المراقبة للبورت (يدعم GET و HEAD لـ UptimeRobot)
+    start_health_server()
 
     # بناء تطبيق التيليجرام
     app = ApplicationBuilder().token(TOKEN).build()
