@@ -180,6 +180,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("عذراً، حصلت مشكلة صغيرة أثناء معالجة الرسالة.")
 
 
+async def transcribe_voice(voice_bytes: bytes) -> str:
+    """تحويل الرسالة الصوتية إلى نص عربي بدقة مع دعم نماذج بديلة عند الضغط"""
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    audio_part = types.Part.from_bytes(
+        data=voice_bytes,
+        mime_type="audio/ogg"
+    )
+
+    models_to_try = [
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-latest",
+        "gemini-3.8-flash"
+    ]
+
+    last_err = None
+    for model_name in models_to_try:
+        try:
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    audio_part,
+                    "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
+                ]
+            )
+            text = resp.text.strip()
+            if text:
+                return text
+        except Exception as e:
+            logger.warning(f"[VOICE] Transcription failed on {model_name}: {e}. Trying fallback...")
+            last_err = e
+            continue
+
+    raise last_err or Exception("Could not transcribe voice note.")
+
+
 # ── معالجة الرسايل الصوتية (Voice Notes) ────────────────────────────────────
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -189,24 +225,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file = await context.bot.get_file(voice.file_id)
             voice_bytes = await file.download_as_bytearray()
 
-            # استخراج النص من الصوت باستخدام Gemini Multimodal
-            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-            audio_part = types.Part.from_bytes(
-                data=bytes(voice_bytes),
-                mime_type="audio/ogg"
-            )
-
-            transcription_resp = client.models.generate_content(
-                model="gemini-3.5-flash",
-                contents=[
-                    audio_part,
-                    "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
-                ]
-            )
-            transcribed_text = transcription_resp.text.strip()
+            # تفريغ الصوت بنموذج الذكاء الاصطناعي مع التبديل التلقائي
+            transcribed_text = await transcribe_voice(bytes(voice_bytes))
             logger.info(f"[VOICE] Transcribed user {user_id}: {transcribed_text}")
 
-            # معالجة النص المنطوق كرسالة عادية
+            # معالجة النص المنطوق كرسالة عادية وتنفيذ المطلوب
             agent = UserAIAgent(user_id)
             reply = await agent.process_message(transcribed_text)
 
@@ -215,4 +238,4 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             logger.error(f"[VOICE ERROR] {e}")
-            await update.message.reply_text(f"عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح: {e}")
+            await update.message.reply_text("عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح أو كان في ضغط مؤقت في شبكة الذكاء الاصطناعي. جرب تسجل تاني أو تبعت كتابة.")
