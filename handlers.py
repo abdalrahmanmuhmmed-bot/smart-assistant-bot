@@ -2,6 +2,7 @@ import os
 import io
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
@@ -14,14 +15,47 @@ from ai_agent import UserAIAgent
 logger = logging.getLogger(__name__)
 
 
-async def _keep_typing(chat):
-    """إبقاء علامة يكتب الآن ظاهرة طوال فترة تفكير ومعالجة الذكاء الاصطناعي"""
-    while True:
+@asynccontextmanager
+async def typing_indicator(chat, interval: float = 4.0):
+    """
+    Context manager that immediately sends ChatAction.TYPING,
+    then keeps sending it periodically approximately every `interval` seconds
+    until the block exits, is cancelled, or raises an error.
+    Guarantees clean task cancellation and cleanup.
+    """
+    if chat is None:
+        yield None
+        return
+
+    # 1. Immediate dispatch before long-running processing
+    try:
+        await chat.send_action(ChatAction.TYPING)
+    except Exception as e:
+        logger.debug(f"[TYPING] Immediate send_action failed: {e}")
+
+    # 2. Background recurring loop
+    async def _loop():
         try:
-            await chat.send_action(ChatAction.TYPING)
-        except Exception:
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    await chat.send_action(ChatAction.TYPING)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.debug(f"[TYPING] Periodic send_action failed: {e}")
+        except asyncio.CancelledError:
             pass
-        await asyncio.sleep(3.5)
+
+    task = asyncio.create_task(_loop())
+    try:
+        yield task
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -49,13 +83,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── /briefing ──────────────────────────────────────────────────────────────
 async def briefing_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
-    try:
-        agent = UserAIAgent(user_id)
-        reply = await agent.process_message("جهزلي الملخص اليومي (Daily Briefing) للنهاردة بأهم الأولويات والتنبيهات والمهام القادمة")
-        await update.message.reply_text(reply)
-    finally:
-        typing_task.cancel()
+    async with typing_indicator(update.effective_chat, interval=4.0):
+        try:
+            agent = UserAIAgent(user_id)
+            reply = await agent.process_message("جهزلي الملخص اليومي (Daily Briefing) للنهاردة بأهم الأولويات والتنبيهات والمهام القادمة")
+            await update.message.reply_text(reply)
+        except Exception as e:
+            logger.error(f"[BRIEFING ERROR] {e}")
+            await update.message.reply_text("عذراً، حصلت مشكلة أثناء تجهيز الملخص اليومي.")
 
 
 # ── /tasks ─────────────────────────────────────────────────────────────────
@@ -135,54 +170,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
-    try:
-        agent = UserAIAgent(user_id)
-        reply = await agent.process_message(text)
-        await update.message.reply_text(reply)
-    except Exception as e:
-        logger.error(f"[HANDLE_MESSAGE ERROR] {e}")
-        await update.message.reply_text("عذراً، حصلت مشكلة صغيرة أثناء معالجة الرسالة.")
-    finally:
-        typing_task.cancel()
+    async with typing_indicator(update.effective_chat, interval=4.0):
+        try:
+            agent = UserAIAgent(user_id)
+            reply = await agent.process_message(text)
+            await update.message.reply_text(reply)
+        except Exception as e:
+            logger.error(f"[HANDLE_MESSAGE ERROR] {e}")
+            await update.message.reply_text("عذراً، حصلت مشكلة صغيرة أثناء معالجة الرسالة.")
 
 
 # ── معالجة الرسايل الصوتية (Voice Notes) ────────────────────────────────────
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    typing_task = asyncio.create_task(_keep_typing(update.effective_chat))
+    async with typing_indicator(update.effective_chat, interval=4.0):
+        try:
+            voice = update.message.voice
+            file = await context.bot.get_file(voice.file_id)
+            voice_bytes = await file.download_as_bytearray()
 
-    try:
-        voice = update.message.voice
-        file = await context.bot.get_file(voice.file_id)
-        voice_bytes = await file.download_as_bytearray()
+            # استخراج النص من الصوت باستخدام Gemini Multimodal
+            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            audio_part = types.Part.from_bytes(
+                data=bytes(voice_bytes),
+                mime_type="audio/ogg"
+            )
 
-        # استخراج النص من الصوت باستخدام Gemini Multimodal
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        audio_part = types.Part.from_bytes(
-            data=bytes(voice_bytes),
-            mime_type="audio/ogg"
-        )
+            transcription_resp = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=[
+                    audio_part,
+                    "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
+                ]
+            )
+            transcribed_text = transcription_resp.text.strip()
+            logger.info(f"[VOICE] Transcribed user {user_id}: {transcribed_text}")
 
-        transcription_resp = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=[
-                audio_part,
-                "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
-            ]
-        )
-        transcribed_text = transcription_resp.text.strip()
-        logger.info(f"[VOICE] Transcribed user {user_id}: {transcribed_text}")
+            # معالجة النص المنطوق كرسالة عادية
+            agent = UserAIAgent(user_id)
+            reply = await agent.process_message(transcribed_text)
 
-        # معالجة النص المنطوق كرسالة عادية
-        agent = UserAIAgent(user_id)
-        reply = await agent.process_message(transcribed_text)
+            full_reply = f"🎙️ *سمعتك بتقول:*\n\"{transcribed_text}\"\n\n{reply}"
+            await update.message.reply_text(full_reply, parse_mode="Markdown")
 
-        full_reply = f"🎙️ *سمعتك بتقول:*\n\"{transcribed_text}\"\n\n{reply}"
-        await update.message.reply_text(full_reply, parse_mode="Markdown")
-
-    except Exception as e:
-        logger.error(f"[VOICE ERROR] {e}")
-        await update.message.reply_text(f"عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح: {e}")
-    finally:
-        typing_task.cancel()
+        except Exception as e:
+            logger.error(f"[VOICE ERROR] {e}")
+            await update.message.reply_text(f"عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح: {e}")
