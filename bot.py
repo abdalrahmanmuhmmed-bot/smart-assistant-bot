@@ -20,6 +20,7 @@ from handlers import (
     list_reminders_cmd,
     expenses_cmd,
     memory_cmd,
+    status_cmd,
     handle_message,
     handle_voice,
 )
@@ -91,6 +92,7 @@ async def main():
     app.add_handler(CommandHandler("reminders", list_reminders_cmd))
     app.add_handler(CommandHandler("expenses",  expenses_cmd))
     app.add_handler(CommandHandler("memory",    memory_cmd))
+    app.add_handler(CommandHandler("status",    status_cmd))
 
     # تسجيل الرسايل النصية والصوتية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

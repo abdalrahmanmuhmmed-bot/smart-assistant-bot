@@ -111,6 +111,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/reminders – التنبيهات المجدولة\n"
         "/expenses – ملخص المصاريف\n"
         "/memory – الحاجات اللي فاكرها عنك\n"
+        "/status – حالة النظام وقاعدة البيانات\n"
         "/help – دليل الاستخدام"
     )
     await update.message.reply_text(welcome_msg)
@@ -197,6 +198,27 @@ async def memory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"• [{m['category']}] {m['content']}")
 
     await update.message.reply_text("\n".join(lines))
+
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض حالة السيرفر وقاعدة البيانات السحابية الحالية"""
+    user_id = update.effective_user.id
+    import firebase_db
+    is_cloud = firebase_db.is_firebase_active()
+    db_name = "Cloud Firestore ☁️" if is_cloud else "SQLite (Local) 📁"
+    tasks_count = len(database.list_tasks(user_id))
+    rems_count = len(database.list_pending_reminders(user_id))
+    now_str = database.get_current_time_cairo().strftime("%I:%M %p - %Y-%m-%d")
+
+    msg = (
+        f"🟢 <b>حالة المساعد الذكي</b>\n\n"
+        f"• <b>قاعدة البيانات:</b> {db_name}\n"
+        f"• <b>المهام النشطة:</b> {tasks_count} مهمة\n"
+        f"• <b>التذكيرات القادمة:</b> {rems_count} تذكير\n"
+        f"• <b>التوقيت الحالي (القاهرة):</b> {now_str}\n"
+        f"• <b>الإصدار:</b> v2.2 (Cloud Connected)"
+    )
+    await send_formatted_reply(update.message, msg)
 
 
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────
