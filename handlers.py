@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from google import genai
 from google.genai import types
 
-import database
+import firebase_db as database
 from ai_agent import UserAIAgent
 
 logger = logging.getLogger(__name__)

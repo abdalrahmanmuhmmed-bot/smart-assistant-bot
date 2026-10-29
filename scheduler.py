@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from database import get_due_reminders, mark_reminder_sent, get_current_time_cairo
+from firebase_db import get_due_reminders, mark_reminder_sent, get_current_time_cairo
 
 logger = logging.getLogger(__name__)
 CAIRO_TZ = ZoneInfo("Africa/Cairo")

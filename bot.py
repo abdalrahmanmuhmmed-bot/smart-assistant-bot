@@ -71,7 +71,11 @@ async def main():
         return
 
     init_db()
-    logger.info("[DB] Database and tables verified.")
+    import firebase_db
+    if firebase_db.is_firebase_active():
+        logger.info("[DB] Firebase Firestore is ACTIVE and connected.")
+    else:
+        logger.info("[DB] Using local SQLite database (Firebase credentials not detected).")
 
     # تشغيل خادم المراقبة للبورت (يدعم GET و HEAD لـ UptimeRobot)
     start_health_server()

@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.db
+firebase_key.json
+*firebase*.json
+serviceAccountKey.json
+
