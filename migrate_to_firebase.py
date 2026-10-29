@@ -3,6 +3,9 @@ import sqlite3
 import os
 import firebase_db
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "assistant.db")
 
 

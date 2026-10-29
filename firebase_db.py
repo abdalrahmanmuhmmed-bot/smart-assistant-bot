@@ -106,9 +106,9 @@ def list_tasks(user_id: int, status: str = None, project: str = None, limit: int
     if not db:
         return sqlite_db.list_tasks(user_id, status, project, limit)
 
-    query = db.collection("tasks").where("user_id", "==", user_id)
+    query = db.collection("tasks").where(filter=firestore.FieldFilter("user_id", "==", user_id))
     if status:
-        query = query.where("status", "==", status)
+        query = query.where(filter=firestore.FieldFilter("status", "==", status))
 
     docs = query.stream()
     tasks = []
@@ -173,7 +173,11 @@ def list_pending_reminders(user_id: int) -> list:
     if not db:
         return sqlite_db.list_pending_reminders(user_id)
 
-    query = db.collection("reminders").where("user_id", "==", user_id).where("status", "==", "pending")
+    query = (
+        db.collection("reminders")
+        .where(filter=firestore.FieldFilter("user_id", "==", user_id))
+        .where(filter=firestore.FieldFilter("status", "==", "pending"))
+    )
     docs = query.stream()
     reminders = [d.to_dict() | {"id": d.id} for d in docs]
     reminders.sort(key=lambda x: x.get("remind_at", ""))
@@ -202,7 +206,11 @@ def get_due_reminders(current_time_iso: str) -> list:
     if not db:
         return sqlite_db.get_due_reminders(current_time_iso)
 
-    query = db.collection("reminders").where("status", "==", "pending").where("remind_at", "<=", current_time_iso)
+    query = (
+        db.collection("reminders")
+        .where(filter=firestore.FieldFilter("status", "==", "pending"))
+        .where(filter=firestore.FieldFilter("remind_at", "<=", current_time_iso))
+    )
     docs = query.stream()
     return [d.to_dict() | {"id": d.id} for d in docs]
 
@@ -247,9 +255,9 @@ def list_memories(user_id: int, category: str = None, limit: int = 20) -> list:
     if not db:
         return sqlite_db.list_memories(user_id, category, limit)
 
-    query = db.collection("memories").where("user_id", "==", user_id)
+    query = db.collection("memories").where(filter=firestore.FieldFilter("user_id", "==", user_id))
     if category:
-        query = query.where("category", "==", category)
+        query = query.where(filter=firestore.FieldFilter("category", "==", category))
     docs = query.stream()
     memories = [d.to_dict() | {"id": d.id} for d in docs]
     memories.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -300,7 +308,7 @@ def get_expenses_summary(user_id: int) -> dict:
     if not db:
         return sqlite_db.get_expenses_summary(user_id)
 
-    query = db.collection("expenses").where("user_id", "==", user_id)
+    query = db.collection("expenses").where(filter=firestore.FieldFilter("user_id", "==", user_id))
     docs = query.stream()
     expenses = [d.to_dict() | {"id": d.id} for d in docs]
     total = sum(float(e.get("amount", 0)) for e in expenses)
@@ -335,7 +343,7 @@ def search_notes(user_id: int, query: str = "", limit: int = 10) -> list:
     if not db:
         return sqlite_db.search_notes(user_id, query, limit)
 
-    query_ref = db.collection("notes").where("user_id", "==", user_id)
+    query_ref = db.collection("notes").where(filter=firestore.FieldFilter("user_id", "==", user_id))
     docs = query_ref.stream()
     notes = [d.to_dict() | {"id": d.id} for d in docs]
 
@@ -378,7 +386,7 @@ def list_projects(user_id: int) -> list:
     if not db:
         return sqlite_db.list_projects(user_id)
 
-    query = db.collection("projects").where("user_id", "==", user_id)
+    query = db.collection("projects").where(filter=firestore.FieldFilter("user_id", "==", user_id))
     docs = query.stream()
     projects = [d.to_dict() | {"id": d.id} for d in docs]
     projects.sort(key=lambda x: x.get("created_at", ""), reverse=True)
