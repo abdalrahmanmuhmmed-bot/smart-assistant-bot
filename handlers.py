@@ -38,6 +38,19 @@ def format_for_telegram(text: str) -> str:
     return text
 
 
+async def send_formatted_to_chat(bot, chat_id: int, text: str):
+    """
+    Sends message to a specific chat using Telegram HTML parser.
+    Safely falls back to plain text if parsing fails.
+    """
+    formatted_html = format_for_telegram(text)
+    try:
+        await bot.send_message(chat_id=chat_id, text=formatted_html, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"[FORMATTING] HTML parse failed for chat {chat_id}: {e}. Falling back to plain text.")
+        await bot.send_message(chat_id=chat_id, text=text)
+
+
 async def send_formatted_reply(message, text: str):
     """
     Sends message using Telegram HTML parser.
@@ -96,6 +109,10 @@ async def typing_indicator(chat, interval: float = 4.0):
 
 # ── /start ─────────────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
     welcome_msg = (
         "أهلاً بيك يا فندم! 👋 أنا مساعدك وسكرتيرك الشخصي.\n\n"
         "أنا هنا عشان أنظملك حياتك ومهامك ومواعيدك، وأفتكر كل التفاصيل المهمة.\n\n"
@@ -104,9 +121,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 'ضيف مهمة تسليم التقرير يوم الخميس لأولويات الكلية'\n"
         "• 'صرفت 120 جنيه غدا النهاردة'\n"
         "• 'فكرة: نعمل مشروع ذكاء اصطناعي لكذا'\n"
-        "• 'أنا بفضل أذاكر الفجر (هحفظها في ذاكرتك الدائمة)'\n\n"
+        "• 'أنا بفضل أذاكر الفجر (هحفظها في ذاكرتك الدائمة)'\n"
+        "• 'عايز الإيجاز الصباحي يجيلي 9 الصبح'\n\n"
         "الأوامر السريعة:\n"
         "/briefing – ملخصك اليومي وأولوياتك\n"
+        "/briefing_time – موعد الإيجاز الصباحي التلقائي\n"
         "/tasks – قائمة المهام النشطة\n"
         "/reminders – التنبيهات المجدولة\n"
         "/expenses – ملخص المصاريف\n"
@@ -203,26 +222,82 @@ async def memory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """عرض حالة السيرفر وقاعدة البيانات السحابية الحالية"""
     user_id = update.effective_user.id
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
     import firebase_db
     is_cloud = firebase_db.is_firebase_active()
     db_name = "Cloud Firestore ☁️" if is_cloud else "SQLite (Local) 📁"
     tasks_count = len(database.list_tasks(user_id))
     rems_count = len(database.list_pending_reminders(user_id))
+    settings = database.get_user_settings(user_id)
+    b_status = f"مفعّل يومياً في {settings.get('briefing_time', '08:30')} 🌅" if settings.get("briefing_enabled") else "معطّل 🔴"
     now_str = database.get_current_time_cairo().strftime("%I:%M %p - %Y-%m-%d")
 
     msg = (
         f"🟢 <b>حالة المساعد الذكي</b>\n\n"
         f"• <b>قاعدة البيانات:</b> {db_name}\n"
+        f"• <b>الإيجاز الصباحي:</b> {b_status}\n"
         f"• <b>المهام النشطة:</b> {tasks_count} مهمة\n"
         f"• <b>التذكيرات القادمة:</b> {rems_count} تذكير\n"
         f"• <b>التوقيت الحالي (القاهرة):</b> {now_str}\n"
-        f"• <b>الإصدار:</b> v2.2 (Cloud Connected)"
+        f"• <b>الإصدار:</b> v2.3 (Proactive Briefing)"
     )
     await send_formatted_reply(update.message, msg)
 
 
+async def briefing_time_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض أو تغيير موعد الإيجاز الصباحي التلقائي"""
+    user_id = update.effective_user.id
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
+    args = context.args
+    settings = database.get_user_settings(user_id)
+
+    if not args:
+        status_txt = "مفعّل 🟢" if settings.get("briefing_enabled") else "معطّل 🔴"
+        current_time = settings.get("briefing_time", "08:30")
+        msg = (
+            f"🌅 <b>إعدادات الإيجاز الصباحي التلقائي</b>\n\n"
+            f"• <b>الحالة:</b> {status_txt}\n"
+            f"• <b>الموعد الحالي:</b> {current_time} بتوقيت القاهرة\n\n"
+            f"لتغيير الموعد، أرسل:\n"
+            f"<code>/briefing_time 09:00</code> (بصيغة 24 ساعة)\n"
+            f"أو للتعطيل:\n"
+            f"<code>/briefing_time off</code>\n"
+            f"أو للتفعيل:\n"
+            f"<code>/briefing_time on</code>\n\n"
+            f"<i>(يمكنك أيضاً طلب ذلك في أي وقت بالحديث الطبيعي أو الفويس نوت)</i>"
+        )
+        await send_formatted_reply(update.message, msg)
+        return
+
+    sub = args[0].lower().strip()
+    if sub in ("off", "disable", "تعطيل", "إيقاف"):
+        database.update_user_settings(user_id, briefing_enabled=False)
+        await send_formatted_reply(update.message, "✅ تم تعطيل الإيجاز الصباحي التلقائي.")
+    elif sub in ("on", "enable", "تفعيل", "تشغيل"):
+        database.update_user_settings(user_id, briefing_enabled=True)
+        await send_formatted_reply(update.message, f"✅ تم تفعيل الإيجاز الصباحي التلقائي في موعده ({settings.get('briefing_time', '08:30')} بتوقيت القاهرة).")
+    else:
+        if len(sub) == 5 and sub[2] == ":" and sub[:2].isdigit() and sub[3:].isdigit():
+            h, m = int(sub[:2]), int(sub[3:])
+            if 0 <= h < 24 and 0 <= m < 60:
+                database.update_user_settings(user_id, briefing_time=sub, briefing_enabled=True)
+                await send_formatted_reply(update.message, f"✅ تم ضبط موعد الإيجاز الصباحي التلقائي يومياً على الساعة <b>{sub}</b> بتوقيت القاهرة 🌅")
+                return
+        await send_formatted_reply(update.message, "⚠️ صيغة غير صحيحة. يرجى كتابة الوقت مثل: <code>/briefing_time 08:30</code>")
+
+
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
     user_id = update.effective_user.id
     text = update.message.text.strip()
     if text.startswith("/"):
@@ -275,6 +350,10 @@ async def transcribe_voice(voice_bytes: bytes) -> str:
 
 # ── معالجة الرسايل الصوتية (Voice Notes) ────────────────────────────────────
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
     user_id = update.effective_user.id
     async with typing_indicator(update.effective_chat, interval=4.0):
         try:

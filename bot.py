@@ -12,10 +12,11 @@ from telegram.ext import (
 )
 
 from database import init_db
-from scheduler import reminder_worker
+from scheduler import reminder_worker, morning_briefing_worker
 from handlers import (
     start,
     briefing_cmd,
+    briefing_time_cmd,
     list_tasks_cmd,
     list_reminders_cmd,
     expenses_cmd,
@@ -85,31 +86,34 @@ async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     # تسجيل الأوامر
-    app.add_handler(CommandHandler("start",     start))
-    app.add_handler(CommandHandler("help",      start))
-    app.add_handler(CommandHandler("briefing",  briefing_cmd))
-    app.add_handler(CommandHandler("tasks",     list_tasks_cmd))
-    app.add_handler(CommandHandler("reminders", list_reminders_cmd))
-    app.add_handler(CommandHandler("expenses",  expenses_cmd))
-    app.add_handler(CommandHandler("memory",    memory_cmd))
-    app.add_handler(CommandHandler("status",    status_cmd))
+    app.add_handler(CommandHandler("start",         start))
+    app.add_handler(CommandHandler("help",          start))
+    app.add_handler(CommandHandler("briefing",      briefing_cmd))
+    app.add_handler(CommandHandler("briefing_time", briefing_time_cmd))
+    app.add_handler(CommandHandler("tasks",         list_tasks_cmd))
+    app.add_handler(CommandHandler("reminders",     list_reminders_cmd))
+    app.add_handler(CommandHandler("expenses",      expenses_cmd))
+    app.add_handler(CommandHandler("memory",        memory_cmd))
+    app.add_handler(CommandHandler("status",        status_cmd))
 
     # تسجيل الرسايل النصية والصوتية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    logger.info("[BOT] Starting Telegram polling & background reminder worker...")
+    logger.info("[BOT] Starting Telegram polling & background workers (reminders + morning briefing)...")
     async with app:
         await app.start()
         await app.updater.start_polling()
 
-        # تشغيل محرك التنبيهات في الخلفية
+        # تشغيل محرك التنبيهات ومحرك الإيجاز الصباحي في الخلفية
         reminder_task = asyncio.create_task(reminder_worker(app))
+        briefing_task = asyncio.create_task(morning_briefing_worker(app))
 
         try:
             await asyncio.Event().wait()
         finally:
             reminder_task.cancel()
+            briefing_task.cancel()
 
 
 if __name__ == "__main__":

@@ -256,6 +256,33 @@ class UserAIAgent:
         except Exception as e:
             return {"error": str(e)}
 
+    # ─── Tool 7: Morning Briefing Settings ────────────────────────────────────
+    def briefing_settings_tool(self, action: str, time_hhmm: str = "") -> dict:
+        """
+        Configure or inspect user's automated proactive morning briefing.
+        Args:
+            action: 'get', 'set_time', 'enable', 'disable'
+            time_hhmm: Time in 24-hour format HH:MM in Cairo time (e.g. '08:30', '09:00', '07:30')
+        """
+        try:
+            if action == "get":
+                settings = database.get_user_settings(self.user_id)
+                return {"status": "success", "settings": settings}
+            elif action == "set_time":
+                if not time_hhmm or len(time_hhmm) != 5 or ":" not in time_hhmm:
+                    return {"error": "Invalid time format. Please provide HH:MM in 24-hour format (e.g., 08:30)."}
+                database.update_user_settings(self.user_id, briefing_time=time_hhmm, briefing_enabled=True)
+                return {"status": "success", "message": f"Morning briefing scheduled daily at {time_hhmm} Cairo time."}
+            elif action == "enable":
+                database.update_user_settings(self.user_id, briefing_enabled=True)
+                return {"status": "success", "message": "Morning briefing enabled."}
+            elif action == "disable":
+                database.update_user_settings(self.user_id, briefing_enabled=False)
+                return {"status": "success", "message": "Morning briefing disabled."}
+            return {"error": f"Unknown action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+
     # ─── Main Execution ──────────────────────────────────────────────────────
     async def process_message(self, user_text: str) -> str:
         """
@@ -299,7 +326,8 @@ class UserAIAgent:
             self.memory_tool,
             self.expense_tool,
             self.note_tool,
-            self.daily_briefing_tool
+            self.daily_briefing_tool,
+            self.briefing_settings_tool
         ]
 
         models_to_try = [

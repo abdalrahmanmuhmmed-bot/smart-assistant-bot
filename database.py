@@ -100,6 +100,19 @@ def init_db():
         )
     """)
 
+    # 7. User Profiles & Morning Briefing Settings
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            username TEXT,
+            briefing_enabled INTEGER DEFAULT 1,
+            briefing_time TEXT DEFAULT '08:30',
+            last_briefing_date TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -384,3 +397,79 @@ def get_briefing_data(user_id: int) -> dict:
         "today_reminders": today_reminders,
         "key_memories": memories
     }
+
+
+# ─── User Settings & Morning Briefing Operations ─────────────────────────────
+
+def upsert_user(user_id: int, first_name: str = "", username: str = "") -> dict:
+    now_iso = get_current_time_cairo().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO users (user_id, first_name, username, briefing_enabled, briefing_time, last_briefing_date, created_at)
+        VALUES (?, ?, ?, 1, '08:30', '', ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            first_name = CASE WHEN ? != '' THEN ? ELSE first_name END,
+            username = CASE WHEN ? != '' THEN ? ELSE username END
+    """, (user_id, first_name, username, now_iso, first_name, first_name, username, username))
+    conn.commit()
+    conn.close()
+    return get_user_settings(user_id)
+
+
+def get_user_settings(user_id: int) -> dict:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return {
+        "user_id": user_id,
+        "briefing_enabled": 1,
+        "briefing_time": "08:30",
+        "last_briefing_date": ""
+    }
+
+
+def update_user_settings(user_id: int, briefing_enabled: int = None,
+                         briefing_time: str = None, last_briefing_date: str = None) -> bool:
+    conn = get_connection()
+    c = conn.cursor()
+    updates = []
+    params = []
+    if briefing_enabled is not None:
+        updates.append("briefing_enabled = ?")
+        params.append(1 if briefing_enabled else 0)
+    if briefing_time is not None:
+        updates.append("briefing_time = ?")
+        params.append(briefing_time)
+    if last_briefing_date is not None:
+        updates.append("last_briefing_date = ?")
+        params.append(last_briefing_date)
+
+    if not updates:
+        conn.close()
+        return True
+
+    params.append(user_id)
+    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?", params)
+    affected = c.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+
+def get_users_for_morning_briefing(current_hhmm: str, today_date: str) -> list:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT * FROM users
+        WHERE briefing_enabled = 1
+          AND briefing_time = ?
+          AND (last_briefing_date IS NULL OR last_briefing_date != ?)
+    """, (current_hhmm, today_date))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows

@@ -412,3 +412,119 @@ def get_briefing_data(user_id: int) -> dict:
         "today_reminders": today_reminders,
         "key_memories": [{"category": m.get("category"), "content": m.get("content")} for m in memories]
     }
+
+
+# ─── User Settings & Morning Briefing Operations ─────────────────────────────
+
+def upsert_user(user_id: int, first_name: str = "", username: str = "") -> dict:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.upsert_user(user_id, first_name, username)
+
+    try:
+        doc_ref = db.collection("users").document(str(user_id))
+        doc = doc_ref.get()
+        now_iso = get_current_time_cairo().isoformat()
+        if doc.exists:
+            data = doc.to_dict()
+            updates = {}
+            if first_name and data.get("first_name") != first_name:
+                updates["first_name"] = first_name
+            if username and data.get("username") != username:
+                updates["username"] = username
+            if updates:
+                doc_ref.update(updates)
+                data.update(updates)
+            return data
+        else:
+            new_user = {
+                "user_id": user_id,
+                "first_name": first_name or "",
+                "username": username or "",
+                "briefing_enabled": True,
+                "briefing_time": "08:30",
+                "last_briefing_date": "",
+                "created_at": now_iso
+            }
+            doc_ref.set(new_user)
+            return new_user
+    except Exception as e:
+        logger.error(f"Firestore upsert_user error: {e}")
+        return sqlite_db.upsert_user(user_id, first_name, username)
+
+
+def get_user_settings(user_id: int) -> dict:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.get_user_settings(user_id)
+
+    try:
+        doc_ref = db.collection("users").document(str(user_id))
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        # Default user if not yet registered
+        return {
+            "user_id": user_id,
+            "briefing_enabled": True,
+            "briefing_time": "08:30",
+            "last_briefing_date": ""
+        }
+    except Exception as e:
+        logger.error(f"Firestore get_user_settings error: {e}")
+        return sqlite_db.get_user_settings(user_id)
+
+
+def update_user_settings(user_id: int, briefing_enabled: Optional[bool] = None,
+                         briefing_time: Optional[str] = None, last_briefing_date: Optional[str] = None) -> bool:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.update_user_settings(user_id, briefing_enabled, briefing_time, last_briefing_date)
+
+    try:
+        doc_ref = db.collection("users").document(str(user_id))
+        updates = {}
+        if briefing_enabled is not None:
+            updates["briefing_enabled"] = bool(briefing_enabled)
+        if briefing_time is not None:
+            updates["briefing_time"] = briefing_time
+        if last_briefing_date is not None:
+            updates["last_briefing_date"] = last_briefing_date
+
+        if not updates:
+            return True
+
+        doc = doc_ref.get()
+        if not doc.exists:
+            # create doc if missing
+            upsert_user(user_id)
+
+        doc_ref.update(updates)
+        return True
+    except Exception as e:
+        logger.error(f"Firestore update_user_settings error: {e}")
+        return sqlite_db.update_user_settings(user_id, briefing_enabled, briefing_time, last_briefing_date)
+
+
+def get_users_for_morning_briefing(current_hhmm: str, today_date: str) -> list:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.get_users_for_morning_briefing(current_hhmm, today_date)
+
+    try:
+        query = (
+            db.collection("users")
+            .where(filter=firestore.FieldFilter("briefing_enabled", "==", True))
+            .where(filter=firestore.FieldFilter("briefing_time", "==", current_hhmm))
+        )
+        docs = query.stream()
+        results = []
+        for d in docs:
+            item = d.to_dict()
+            # Check that briefing hasn't already been sent today
+            if item.get("last_briefing_date") != today_date:
+                results.append(item)
+        return results
+    except Exception as e:
+        logger.error(f"Firestore get_users_for_morning_briefing error: {e}")
+        return sqlite_db.get_users_for_morning_briefing(current_hhmm, today_date)
