@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -13,6 +14,41 @@ import database
 from ai_agent import UserAIAgent
 
 logger = logging.getLogger(__name__)
+
+
+def format_for_telegram(text: str) -> str:
+    """
+    Converts standard Markdown into valid, beautiful Telegram HTML.
+    Prevents formatting breakage and ensures bold, italic, code render natively.
+    """
+    # 1. Protect and escape HTML entities
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # 2. Multi-line code blocks: ```code``` -> <pre>code</pre>
+    text = re.sub(r"```(?:[a-zA-Z0-9_-]+)?\n?(.*?)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
+    # 3. Inline code: `code` -> <code>code</code>
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    # 4. Bold: **text** or __text__ -> <b>text</b>
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__([^_]+)__", r"<b>\1</b>", text)
+    # 5. Italic: *text* or _text_ -> <i>text</i> (when not part of a word or snake_case)
+    text = re.sub(r"(?<![a-zA-Z0-9_*])\*([^*]+)\*(?![a-zA-Z0-9_*])", r"<i>\1</i>", text)
+    text = re.sub(r"(?<![a-zA-Z0-9_])_([^_]+)_(?![a-zA-Z0-9_])", r"<i>\1</i>", text)
+    # 6. Headers: # Header -> <b>Header</b>
+    text = re.sub(r"^#{1,6}\s*(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
+    return text
+
+
+async def send_formatted_reply(message, text: str):
+    """
+    Sends message using Telegram HTML parser.
+    If Telegram raises any parsing error, falls back safely to plain text.
+    """
+    formatted_html = format_for_telegram(text)
+    try:
+        await message.reply_text(formatted_html, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"[FORMATTING] HTML parse failed: {e}. Falling back to plain text.")
+        await message.reply_text(text)
 
 
 @asynccontextmanager
@@ -87,7 +123,7 @@ async def briefing_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             agent = UserAIAgent(user_id)
             reply = await agent.process_message("جهزلي الملخص اليومي (Daily Briefing) للنهاردة بأهم الأولويات والتنبيهات والمهام القادمة")
-            await update.message.reply_text(reply)
+            await send_formatted_reply(update.message, reply)
         except Exception as e:
             logger.error(f"[BRIEFING ERROR] {e}")
             await update.message.reply_text("عذراً، حصلت مشكلة أثناء تجهيز الملخص اليومي.")
@@ -174,14 +210,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             agent = UserAIAgent(user_id)
             reply = await agent.process_message(text)
-            await update.message.reply_text(reply)
+            await send_formatted_reply(update.message, reply)
         except Exception as e:
             logger.error(f"[HANDLE_MESSAGE ERROR] {e}")
             await update.message.reply_text("عذراً، حصلت مشكلة صغيرة أثناء معالجة الرسالة.")
 
 
 async def transcribe_voice(voice_bytes: bytes) -> str:
-    """تحويل الرسالة الصوتية إلى نص عربي بدقة مع دعم نماذج بديلة عند الضغط"""
+    """تحويل الرسالة الصوتية إلى نص عربي أو إنجليزي بدقة مع دعم نماذج بديلة عند الضغط"""
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     audio_part = types.Part.from_bytes(
         data=voice_bytes,
@@ -189,10 +225,9 @@ async def transcribe_voice(voice_bytes: bytes) -> str:
     )
 
     models_to_try = [
-        "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
-        "gemini-flash-latest",
-        "gemini-3.8-flash"
+        "gemini-3.5-flash",
+        "gemini-flash-latest"
     ]
 
     last_err = None
@@ -202,7 +237,7 @@ async def transcribe_voice(voice_bytes: bytes) -> str:
                 model=model_name,
                 contents=[
                     audio_part,
-                    "Transcribe this voice note accurately into Arabic. Return only the exact transcribed text, nothing else."
+                    "Transcribe this voice note accurately in the spoken language (Arabic or English). Return only the exact transcribed text, nothing else."
                 ]
             )
             text = resp.text.strip()
@@ -225,7 +260,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file = await context.bot.get_file(voice.file_id)
             voice_bytes = await file.download_as_bytearray()
 
-            # تفريغ الصوت بنموذج الذكاء الاصطناعي مع التبديل التلقائي
+            # تفريغ الصوت بنموذج الذكاء الاصطناعي (عربي / إنجليزي)
             transcribed_text = await transcribe_voice(bytes(voice_bytes))
             logger.info(f"[VOICE] Transcribed user {user_id}: {transcribed_text}")
 
@@ -233,8 +268,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             agent = UserAIAgent(user_id)
             reply = await agent.process_message(transcribed_text)
 
-            full_reply = f"🎙️ *سمعتك بتقول:*\n\"{transcribed_text}\"\n\n{reply}"
-            await update.message.reply_text(full_reply, parse_mode="Markdown")
+            full_reply = f"🎙️ <b>سمعتك بتقول / Heard:</b>\n<i>\"{transcribed_text}\"</i>\n\n{reply}"
+            await send_formatted_reply(update.message, full_reply)
 
         except Exception as e:
             logger.error(f"[VOICE ERROR] {e}")
