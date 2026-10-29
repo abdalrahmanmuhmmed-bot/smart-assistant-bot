@@ -264,15 +264,31 @@ class UserAIAgent:
         now_cairo = database.get_current_time_cairo()
         current_time_str = now_cairo.strftime("%Y-%m-%d %I:%M %p (%A)")
 
-        # Retrieve user key memories and active projects to inject as persistent context
+        # Retrieve user key memories, active tasks, and upcoming reminders to inject as persistent context
         memories = database.list_memories(self.user_id, limit=7)
         memories_context = "\n".join([f"- [{m['category']}] {m['content']}" for m in memories]) if memories else "None yet."
+
+        active_tasks = database.list_tasks(self.user_id, limit=10)
+        tasks_context = "\n".join([
+            f"- [{t.get('priority', 'Medium')}] {t.get('title')} (Deadline: {t.get('deadline') or 'None'}, Status: {t.get('status')})"
+            for t in active_tasks
+        ]) if active_tasks else "No active tasks."
+
+        pending_rems = database.list_pending_reminders(self.user_id)
+        rems_context = "\n".join([
+            f"- Remind at: {r.get('remind_at')} | {r.get('reminder_text')}"
+            for r in pending_rems[:7]
+        ]) if pending_rems else "No pending reminders."
 
         runtime_context = (
             f"{BASE_SYSTEM_INSTRUCTION}\n\n"
             f"## Runtime Environment\n"
             f"- Current Date & Time (Africa/Cairo): {current_time_str}\n"
             f"- Default Timezone: Africa/Cairo\n\n"
+            f"## Current Active Tasks:\n"
+            f"{tasks_context}\n\n"
+            f"## Upcoming Scheduled Reminders:\n"
+            f"{rems_context}\n\n"
             f"## Known User Memory & Confirmed Preferences:\n"
             f"{memories_context}\n"
         )
