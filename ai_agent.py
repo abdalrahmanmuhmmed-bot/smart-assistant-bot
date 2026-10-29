@@ -293,6 +293,70 @@ class UserAIAgent:
         except Exception as e:
             return {"error": str(e)}
 
+    # ─── Tool 8: Google Calendar ──────────────────────────────────────────────
+    def calendar_tool(self, action: str, title: str = "",
+                      start_time_iso: str = "", end_time_iso: str = "",
+                      description: str = "", event_id: str = "",
+                      calendar_email: str = "") -> dict:
+        """
+        Manage Google Calendar events and configure user's linked calendar.
+        Args:
+            action: 'create', 'list', 'delete', 'set_calendar_email', 'get_calendar_status'
+            title: Title or summary of the event (e.g. 'تسليمة مشروع التخرج')
+            start_time_iso: Start date/time in ISO 8601 Cairo time (e.g. '2026-10-31T14:00:00')
+            end_time_iso: End date/time in ISO 8601 Cairo time (optional)
+            description: Description or notes for the calendar event
+            event_id: ID of the event when deleting
+            calendar_email: The user's Google email (e.g. 'user@gmail.com') to link calendar
+        """
+        import calendar_service
+        try:
+            settings = database.get_user_settings(self.user_id)
+            user_cal_id = settings.get("google_calendar_id") or "primary"
+
+            if action == "set_calendar_email":
+                if not calendar_email or "@" not in calendar_email:
+                    return {"error": "Valid Google email address is required (e.g., user@gmail.com)."}
+                database.update_user_settings(self.user_id, google_calendar_id=calendar_email.strip())
+                return {
+                    "status": "success",
+                    "message": f"Calendar linked to {calendar_email.strip()}."
+                }
+
+            elif action == "get_calendar_status":
+                connected = calendar_service.is_calendar_available()
+                return {
+                    "status": "success",
+                    "available": connected,
+                    "linked_calendar": user_cal_id if user_cal_id != "primary" else "Not set yet"
+                }
+
+            elif action == "create":
+                if not title or not start_time_iso:
+                    return {"error": "Both title and start_time_iso are required to create a calendar event."}
+                res = calendar_service.add_event(
+                    summary=title,
+                    start_iso=start_time_iso,
+                    end_iso=end_time_iso,
+                    description=description,
+                    calendar_id=user_cal_id
+                )
+                return res
+
+            elif action == "list":
+                events = calendar_service.list_events(calendar_id=user_cal_id, max_results=10)
+                return {"status": "success", "count": len(events), "events": events}
+
+            elif action == "delete":
+                if not event_id:
+                    return {"error": "event_id is required to delete."}
+                ok = calendar_service.delete_event(event_id, calendar_id=user_cal_id)
+                return {"status": "success" if ok else "failed", "event_id": event_id}
+
+            return {"error": f"Unknown action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+
     # ─── Main Execution ──────────────────────────────────────────────────────
     async def process_message(self, user_text: str) -> str:
         """
@@ -337,7 +401,8 @@ class UserAIAgent:
             self.expense_tool,
             self.note_tool,
             self.daily_briefing_tool,
-            self.briefing_settings_tool
+            self.briefing_settings_tool,
+            self.calendar_tool
         ]
 
         models_to_try = [

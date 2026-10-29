@@ -17,6 +17,8 @@ from handlers import (
     start,
     briefing_cmd,
     briefing_time_cmd,
+    calendar_cmd,
+    set_calendar_cmd,
     list_tasks_cmd,
     list_reminders_cmd,
     expenses_cmd,
@@ -90,6 +92,8 @@ async def main():
     app.add_handler(CommandHandler("help",          start))
     app.add_handler(CommandHandler("briefing",      briefing_cmd))
     app.add_handler(CommandHandler("briefing_time", briefing_time_cmd))
+    app.add_handler(CommandHandler("calendar",      calendar_cmd))
+    app.add_handler(CommandHandler("set_calendar",  set_calendar_cmd))
     app.add_handler(CommandHandler("tasks",         list_tasks_cmd))
     app.add_handler(CommandHandler("reminders",     list_reminders_cmd))
     app.add_handler(CommandHandler("expenses",      expenses_cmd))

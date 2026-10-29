@@ -100,7 +100,7 @@ def init_db():
         )
     """)
 
-    # 7. User Profiles & Morning Briefing Settings
+    # 7. User Profiles & Settings
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -109,9 +109,16 @@ def init_db():
             briefing_enabled INTEGER DEFAULT 1,
             briefing_time TEXT DEFAULT '08:30',
             last_briefing_date TEXT DEFAULT '',
+            google_calendar_id TEXT DEFAULT '',
             created_at TEXT NOT NULL
         )
     """)
+
+    # Ensure google_calendar_id column exists if table was created previously
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN google_calendar_id TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -434,7 +441,8 @@ def get_user_settings(user_id: int) -> dict:
 
 
 def update_user_settings(user_id: int, briefing_enabled: int = None,
-                         briefing_time: str = None, last_briefing_date: str = None) -> bool:
+                         briefing_time: str = None, last_briefing_date: str = None,
+                         google_calendar_id: str = None) -> bool:
     conn = get_connection()
     c = conn.cursor()
     updates = []
@@ -448,6 +456,9 @@ def update_user_settings(user_id: int, briefing_enabled: int = None,
     if last_briefing_date is not None:
         updates.append("last_briefing_date = ?")
         params.append(last_briefing_date)
+    if google_calendar_id is not None:
+        updates.append("google_calendar_id = ?")
+        params.append(google_calendar_id)
 
     if not updates:
         conn.close()

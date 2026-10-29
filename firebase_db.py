@@ -476,10 +476,11 @@ def get_user_settings(user_id: int) -> dict:
 
 
 def update_user_settings(user_id: int, briefing_enabled: Optional[bool] = None,
-                         briefing_time: Optional[str] = None, last_briefing_date: Optional[str] = None) -> bool:
+                         briefing_time: Optional[str] = None, last_briefing_date: Optional[str] = None,
+                         google_calendar_id: Optional[str] = None) -> bool:
     db = get_firestore_client()
     if not db:
-        return sqlite_db.update_user_settings(user_id, briefing_enabled, briefing_time, last_briefing_date)
+        return sqlite_db.update_user_settings(user_id, briefing_enabled, briefing_time, last_briefing_date, google_calendar_id)
 
     try:
         doc_ref = db.collection("users").document(str(user_id))
@@ -490,6 +491,8 @@ def update_user_settings(user_id: int, briefing_enabled: Optional[bool] = None,
             updates["briefing_time"] = briefing_time
         if last_briefing_date is not None:
             updates["last_briefing_date"] = last_briefing_date
+        if google_calendar_id is not None:
+            updates["google_calendar_id"] = google_calendar_id
 
         if not updates:
             return True

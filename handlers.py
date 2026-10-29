@@ -126,6 +126,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "الأوامر السريعة:\n"
         "/briefing – ملخصك اليومي وأولوياتك\n"
         "/briefing_time – موعد الإيجاز الصباحي التلقائي\n"
+        "/calendar – تقويم جوجل والمواعيد\n"
         "/tasks – قائمة المهام النشطة\n"
         "/reminders – التنبيهات المجدولة\n"
         "/expenses – ملخص المصاريف\n"
@@ -290,6 +291,71 @@ async def briefing_time_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await send_formatted_reply(update.message, f"✅ تم ضبط موعد الإيجاز الصباحي التلقائي يومياً على الساعة <b>{sub}</b> بتوقيت القاهرة 🌅")
                 return
         await send_formatted_reply(update.message, "⚠️ صيغة غير صحيحة. يرجى كتابة الوقت مثل: <code>/briefing_time 08:30</code>")
+
+
+async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض جدول Google Calendar القادم أو إرشادات الربط"""
+    user_id = update.effective_user.id
+    import calendar_service
+    settings = database.get_user_settings(user_id)
+    cal_id = settings.get("google_calendar_id")
+
+    if not cal_id:
+        msg = (
+            "📅 <b>ربط تقويم جوجل (Google Calendar):</b>\n\n"
+            "لم تقم بربط بريدك على تقويم جوجل بعد.\n\n"
+            "<b>طريقة الربط في دقيقة:</b>\n"
+            "1. افتح تقويم جوجل في المتصفح أو التطبيق: <code>calendar.google.com</code>\n"
+            "2. ادخل على إعدادات تقويمك، وفي خانة (مشاركة مع أشخاص محددين) أضف إيميل السيرفر:\n"
+            "<code>firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com</code>\n"
+            "واختر صلاحية: <b>إجراء تغييرات على الأحداث</b>.\n\n"
+            "3. ثم أرسل هنا إيميلك:\n"
+            "<code>/set_calendar your_email@gmail.com</code>\n"
+            "وسيتم ربط ومزامنة جدولك فوراً! 🚀"
+        )
+        await send_formatted_reply(update.message, msg)
+        return
+
+    events = calendar_service.list_events(calendar_id=cal_id, max_results=10)
+    if not events:
+        msg = (
+            f"📅 <b>تقويم جوجل المرتبط:</b> <code>{cal_id}</code>\n\n"
+            "لا توجد أحداث أو مواعيد قادمة مسجلة في التقويم حالياً.\n"
+            "تقدر تقولي: <i>'ضيف ميعاد تسليمة كذا على الكاليندر يوم الخميس الساعة 5'</i> وهضيفهالك فوراً!"
+        )
+        await send_formatted_reply(update.message, msg)
+        return
+
+    lines = [f"📅 <b>أحداث ومواعيد تقويم جوجل القادمة ({cal_id}):</b>\n"]
+    for ev in events:
+        start_str = ev.get("start", "")
+        try:
+            dt = datetime.fromisoformat(start_str.replace("Z", ""))
+            formatted_date = dt.strftime("%d/%m/%Y %I:%M %p")
+        except Exception:
+            formatted_date = start_str
+        lines.append(f"• <b>{ev.get('summary')}</b>\n  ⏰ {formatted_date}")
+
+    await send_formatted_reply(update.message, "\n".join(lines))
+
+
+async def set_calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ربط إيميل تقويم جوجل"""
+    user_id = update.effective_user.id
+    args = context.args
+    if not args or "@" not in args[0]:
+        await send_formatted_reply(update.message, "يرجى كتابة بريدك الإلكتروني هكذا:\n<code>/set_calendar your_email@gmail.com</code>")
+        return
+
+    email = args[0].strip().lower()
+    database.update_user_settings(user_id, google_calendar_id=email)
+    msg = (
+        f"✅ <b>تم حفظ بريد التقويم:</b> <code>{email}</code>\n\n"
+        "تأكد فقط من عمل مشاركة لتقويمك في <code>calendar.google.com</code> مع إيميل الخدمة:\n"
+        "<code>firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com</code>\n"
+        "بصلاحية (إجراء تغييرات على الأحداث) لتبدأ المزامنة الكاملة! 🎯"
+    )
+    await send_formatted_reply(update.message, msg)
 
 
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────
