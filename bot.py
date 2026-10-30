@@ -26,6 +26,7 @@ from handlers import (
     status_cmd,
     handle_message,
     handle_voice,
+    handle_photo,
 )
 
 logging.basicConfig(
@@ -100,9 +101,10 @@ async def main():
     app.add_handler(CommandHandler("memory",        memory_cmd))
     app.add_handler(CommandHandler("status",        status_cmd))
 
-    # تسجيل الرسايل النصية والصوتية
+    # تسجيل الرسايل النصية والصوتية والصور
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
 
     logger.info("[BOT] Starting Telegram polling & background workers (reminders + morning briefing)...")
     async with app:

@@ -358,9 +358,10 @@ class UserAIAgent:
             return {"error": str(e)}
 
     # ─── Main Execution ──────────────────────────────────────────────────────
-    async def process_message(self, user_text: str) -> str:
+    async def process_message(self, user_text: str, image_bytes: bytes = None, mime_type: str = "image/jpeg") -> str:
         """
-        Process the user message with Gemini using Automatic Function Calling (AFC).
+        Process the user message with Gemini using Automatic Function Calling (AFC),
+        supporting multimodal input (text + optional image).
         """
         now_cairo = database.get_current_time_cairo()
         current_time_str = now_cairo.strftime("%Y-%m-%d %I:%M %p (%A)")
@@ -405,6 +406,13 @@ class UserAIAgent:
             self.calendar_tool
         ]
 
+        # Prepare message content (multimodal if image is supplied)
+        contents_payload = []
+        if image_bytes:
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type or "image/jpeg")
+            contents_payload.append(image_part)
+        contents_payload.append(user_text)
+
         models_to_try = [
             "gemini-3.5-flash-lite",
             "gemini-3.5-flash",
@@ -422,7 +430,7 @@ class UserAIAgent:
                     )
                 )
 
-                response = chat.send_message(user_text)
+                response = chat.send_message(contents_payload)
                 return response.text.strip()
             except Exception as e:
                 logger.warning(f"[AI AGENT] Model {model_name} failed: {e}. Trying next fallback...")

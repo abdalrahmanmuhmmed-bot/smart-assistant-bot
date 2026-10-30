@@ -441,3 +441,42 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"[VOICE ERROR] {e}")
             await update.message.reply_text("عذراً، مقدرتش أسمع التسجيل الصوتي بوضوح أو كان في ضغط مؤقت في شبكة الذكاء الاصطناعي. جرب تسجل تاني أو تبعت كتابة.")
+
+
+# ── معالجة الصور والمستندات المرئية (Vision & OCR) ──────────────────────────
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
+    user_id = update.effective_user.id
+    async with typing_indicator(update.effective_chat, interval=4.0):
+        try:
+            if update.message.photo:
+                photo_obj = update.message.photo[-1]
+                file_id = photo_obj.file_id
+            elif update.message.document:
+                file_id = update.message.document.file_id
+            else:
+                return
+
+            file = await context.bot.get_file(file_id)
+            img_bytes = await file.download_as_bytearray()
+
+            caption = (update.message.caption or "").strip()
+            prompt = (
+                f"أرسل المستخدم هذه الصورة مع التعليق التالي: '{caption}'.\n"
+                "حلل الصورة بدقة متناهية:\n"
+                "1. إذا كانت فاتورة أو إيصال: استخرج المبلغ والتصنيف واقترح تسجيله في المصاريف.\n"
+                "2. إذا كانت شريحة أو إعلان أو جدول: استخرج مواعيد التسليمات (Deadlines) أو التكليفات ونظمها كمهام.\n"
+                "3. إذا كانت مسألة أو سؤال أو رسم بياني: اشرحه وأجب عنه بدقة.\n"
+                "4. إذا كانت لقطة شاشة لإعدادات (مثل جوجل كاليندر أو فايربيز): اشرح له بالضبط أين يضغط والخطوة التالية."
+            ) if not caption else f"{caption}\n(حلل الصورة المرفقة وأجب بدقة أو نفذ المطلوب برمجياً)"
+
+            agent = UserAIAgent(user_id)
+            reply = await agent.process_message(prompt, image_bytes=bytes(img_bytes), mime_type="image/jpeg")
+            await send_formatted_reply(update.message, reply)
+
+        except Exception as e:
+            logger.error(f"[PHOTO ERROR] {e}")
+            await update.message.reply_text("عذراً، حدثت مشكلة أثناء معالجة الصورة. يرجى التأكد من وضوح الصورة والمحاولة مرة أخرى.")
