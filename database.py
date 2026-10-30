@@ -120,6 +120,18 @@ def init_db():
     except Exception:
         pass
 
+    
+    # 8. Multi-Turn Chat Conversation History
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -484,3 +496,42 @@ def get_users_for_morning_briefing(current_hhmm: str, today_date: str) -> list:
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
+
+
+# ─── Chat Conversation History Operations ───────────────────────────────────
+
+def add_chat_message(user_id: int, role: str, content: str) -> None:
+    now_iso = get_current_time_cairo().isoformat()
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO chat_history (user_id, role, content, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, role, content, now_iso))
+    conn.commit()
+    conn.close()
+
+
+def get_recent_chat_history(user_id: int, limit: int = 10) -> list:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT role, content FROM chat_history
+        WHERE user_id = ?
+        ORDER BY id DESC LIMIT ?
+    ''', (user_id, limit))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    rows.reverse()
+    return rows
+
+
+def clear_chat_history(user_id: int) -> bool:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+    affected = c.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+

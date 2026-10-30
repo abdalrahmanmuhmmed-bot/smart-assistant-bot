@@ -24,6 +24,7 @@ from handlers import (
     expenses_cmd,
     memory_cmd,
     status_cmd,
+    clear_cmd,
     handle_message,
     handle_voice,
     handle_photo,
@@ -100,6 +101,8 @@ async def main():
     app.add_handler(CommandHandler("expenses",      expenses_cmd))
     app.add_handler(CommandHandler("memory",        memory_cmd))
     app.add_handler(CommandHandler("status",        status_cmd))
+    app.add_handler(CommandHandler("clear",         clear_cmd))
+    app.add_handler(CommandHandler("reset",         clear_cmd))
 
     # تسجيل الرسايل النصية والصوتية والصور
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -419,11 +419,25 @@ class UserAIAgent:
             "gemini-flash-latest"
         ]
 
+        # Prepare multi-turn conversation history
+        recent_history = database.get_recent_chat_history(self.user_id, limit=8)
+        history_contents = []
+        for m in recent_history:
+            role = "user" if m.get("role") == "user" else "model"
+            content_text = m.get("content", "").strip()
+            if content_text:
+                history_contents.append(
+                    types.Content(role=role, parts=[types.Part.from_text(text=content_text)])
+                )
+        while history_contents and history_contents[0].role != "user":
+            history_contents.pop(0)
+
         last_err = None
         for model_name in models_to_try:
             try:
                 chat = self.client.chats.create(
                     model=model_name,
+                    history=history_contents,
                     config=types.GenerateContentConfig(
                         system_instruction=runtime_context,
                         tools=tools
@@ -431,7 +445,13 @@ class UserAIAgent:
                 )
 
                 response = chat.send_message(contents_payload)
-                return response.text.strip()
+                reply_text = response.text.strip()
+
+                # Persist conversation turn in history
+                database.add_chat_message(self.user_id, "user", user_text)
+                database.add_chat_message(self.user_id, "model", reply_text)
+
+                return reply_text
             except Exception as e:
                 logger.warning(f"[AI AGENT] Model {model_name} failed: {e}. Trying next fallback...")
                 last_err = e

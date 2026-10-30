@@ -531,3 +531,61 @@ def get_users_for_morning_briefing(current_hhmm: str, today_date: str) -> list:
     except Exception as e:
         logger.error(f"Firestore get_users_for_morning_briefing error: {e}")
         return sqlite_db.get_users_for_morning_briefing(current_hhmm, today_date)
+
+
+# ─── Chat Conversation History Operations ───────────────────────────────────
+
+def add_chat_message(user_id: int, role: str, content: str) -> None:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.add_chat_message(user_id, role, content)
+
+    try:
+        now_iso = get_current_time_cairo().isoformat()
+        db.collection("chat_history").add({
+            "user_id": user_id,
+            "role": role,
+            "content": content,
+            "created_at": now_iso
+        })
+    except Exception as e:
+        logger.error(f"Firestore add_chat_message error: {e}")
+        sqlite_db.add_chat_message(user_id, role, content)
+
+
+def get_recent_chat_history(user_id: int, limit: int = 10) -> list:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.get_recent_chat_history(user_id, limit)
+
+    try:
+        query = (
+            db.collection("chat_history")
+            .where(filter=firestore.FieldFilter("user_id", "==", user_id))
+        )
+        docs = query.stream()
+        messages = [d.to_dict() for d in docs]
+        messages.sort(key=lambda x: x.get("created_at", ""))
+        recent = messages[-limit:]
+        return [{"role": m.get("role"), "content": m.get("content")} for m in recent]
+    except Exception as e:
+        logger.error(f"Firestore get_recent_chat_history error: {e}")
+        return sqlite_db.get_recent_chat_history(user_id, limit)
+
+
+def clear_chat_history(user_id: int) -> bool:
+    db = get_firestore_client()
+    if not db:
+        return sqlite_db.clear_chat_history(user_id)
+
+    try:
+        query = db.collection("chat_history").where(filter=firestore.FieldFilter("user_id", "==", user_id))
+        docs = query.stream()
+        for doc in docs:
+            doc.reference.delete()
+        sqlite_db.clear_chat_history(user_id)
+        return True
+    except Exception as e:
+        logger.error(f"Firestore clear_chat_history error: {e}")
+        return sqlite_db.clear_chat_history(user_id)
+

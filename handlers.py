@@ -358,6 +358,13 @@ async def set_calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_formatted_reply(update.message, msg)
 
 
+async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """مسح سياق المحادثة الأخيرة والبدء من جديد"""
+    user_id = update.effective_user.id
+    database.clear_chat_history(user_id)
+    await send_formatted_reply(update.message, "🧹 <b>تم مسح سياق المحادثة الأخيرة بنجاح.</b>\nيمكنك الآن بدء موضوع جديد من الصفر.")
+
+
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
