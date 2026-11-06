@@ -1,0 +1,39 @@
+services:
+  # Web Service - للعملية الرئيسية (Health Check + Bot Polling)
+  - type: web
+    name: smart-assistant-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      - key: PORT
+        value: "8080"
+    healthCheckPath: /
+    autoDeploy: true
+
+  # Background Worker - للتنبيهات والإيجاز الصباحي
+  - type: worker
+    name: smart-assistant-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python worker.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+    autoDeploy: true
