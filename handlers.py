@@ -131,7 +131,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/reminders – التنبيهات المجدولة\n"
         "/expenses – ملخص المصاريف\n"
         "/memory – الحاجات اللي فاكرها عنك\n"
-        "/status – حالة النظام وقاعدة البيانات\n"
+        "/status – حالة النظام وقاعدة البيانات (تشخيص ذاتي)\n"
+        "/diagnose – تقرير تقني مفصل عن مكوناتي وحالتي\n"
         "/help – دليل الاستخدام"
     )
     await update.message.reply_text(welcome_msg)
@@ -275,6 +276,69 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏷️ <b>الإصدار:</b> v2.4 (Self-Aware + Optimized)"
     )
     await send_formatted_reply(update.message, msg)
+
+
+async def diagnose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تقرير تقني مفصل عن مكونات البوت وحالته (Self-Diagnosis)"""
+    user_id = update.effective_user.id
+    user = update.effective_user
+    if user:
+        database.upsert_user(user.id, first_name=user.first_name or "", username=user.username or "")
+
+    # Import the diagnose function from ai_agent
+    from ai_agent import diagnose_system
+
+    async with typing_indicator(update.effective_chat, interval=3.0):
+        try:
+            diag = diagnose_system()
+
+            # Format the report
+            config = diag["config"]
+            db = diag["database"]
+            py = diag["python"]
+            imports = diag["imports"]
+            components = diag["components"]
+
+            lines = [
+                f"🔬 <b>تقرير التشخيص الذاتي المفصل</b>",
+                f"<i>الوقت: {diag['timestamp'][:19].replace('T', ' ')} (أفريقيا/القاهرة)</i>\n",
+                f"📦 <b>المكونات الأساسية:</b>",
+            ]
+
+            for name, desc in components.items():
+                lines.append(f"  • <b>{name}:</b> {desc}")
+
+            lines.extend([
+                f"\n⚙️ <b>الإعدادات (.env):</b>",
+                f"  • BOT_TOKEN: {'✅ موجود' if config['bot_token'] else '❌ مفقود'}",
+                f"  • GEMINI_API_KEY: {'✅ موجود' if config['gemini_api_key'] else '❌ مفقود'}",
+                f"  • Firebase Creds: {'✅ موجود' if config['firebase_creds'] else '⚠️ غير مضبوط (سيعمل SQLite)'}",
+                f"  • PORT: {config['port']}",
+                f"\n🗄️ <b>قاعدة البيانات:</b>",
+                f"  • Backend نشط: {db['active_backend']}",
+                f"  • Firestore: {'✅ متصل' if db['firestore_active'] else '❌ غير متصل'}",
+                f"  • SQLite: {'✅ موجود' if db['sqlite_exists'] else '❌ غير موجود'}",
+                f"\n🐍 <b>بيئة Python:</b>",
+                f"  • الإصدار: {py['version']}",
+                f"  • النظام: {py['platform']}",
+                f"\n📚 <b>المكتبات المستوردة:</b>",
+            ])
+
+            for mod, ok in imports.items():
+                status = "✅" if ok else "❌"
+                lines.append(f"  • {mod}: {status}")
+
+            lines.extend([
+                f"\n🏷️ <b>إصدار المعمارية:</b> {diag['architecture_version']}",
+                f"\n<i>💡 هذا التقرير يُولد ديناميكياً من معرفة البوت بنفسه (Self-Awareness)</i>"
+            ])
+
+            msg = "\n".join(lines)
+            await send_formatted_reply(update.message, msg)
+
+        except Exception as e:
+            logger.error(f"[DIAGNOSE ERROR] {e}")
+            await send_formatted_reply(update.message, f"⚠️ فشل في توليد تقرير التشخيص: {e}")
 
 
 async def briefing_time_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):

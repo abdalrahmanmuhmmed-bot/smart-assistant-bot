@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import sys
+import platform
 from zoneinfo import ZoneInfo
 from datetime import datetime
 from dotenv import load_dotenv
@@ -14,7 +16,147 @@ logger = logging.getLogger(__name__)
 
 CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
-BASE_SYSTEM_INSTRUCTION = """
+# ═══════════════════════════════════════════════════════════════════════════
+# SELF-AWARENESS: System Architecture Knowledge Base
+# ═══════════════════════════════════════════════════════════════════════════
+SYSTEM_ARCHITECTURE = """
+## 🏗️ SYSTEM ARCHITECTURE — ما أنا مكون منه (Self-Knowledge)
+
+### 1. Core Runtime
+- **Language**: Python 3.10+ (async/await)
+- **Framework**: python-telegram-bot v21.6 (ApplicationBuilder, async handlers)
+- **Entry Point**: `bot.py` → `async main()` → polling + background workers
+- **Process Model**: Single process, asyncio event loop, threading for health server
+
+### 2. AI Brain (Gemini)
+- **Models** (fallback chain): `gemini-3.5-flash-lite` → `gemini-3.5-flash` → `gemini-flash-latest`
+- **API**: google-genai SDK with **Automatic Function Calling (AFC)**
+- **Context Window**: ~8K tokens reserved for history (MAX_HISTORY_TOKENS=2000)
+- **System Prompt**: Dynamic, injected per-request with runtime context (time, tasks, reminders, memories)
+
+### 3. Tools Available to AI (Function Calling)
+| Tool | Purpose | Backend |
+|------|---------|---------|
+| `task_tool` | CRUD tasks (create/list/update/delete) | Firebase/SQLite |
+| `reminder_tool` | Schedule/list/cancel reminders | Firebase/SQLite |
+| `memory_tool` | Save/list/delete personal memories | Firebase/SQLite |
+| `expense_tool` | Add/summarize expenses | Firebase/SQLite |
+| `note_tool` | Save/search notes & ideas | Firebase/SQLite |
+| `daily_briefing_tool` | Get today's briefing data | Firebase/SQLite |
+| `briefing_settings_tool` | Configure morning briefing | Firebase/SQLite |
+| `calendar_tool` | Google Calendar events + link email | google-api-python-client |
+
+### 4. Data Layer (Dual-Backend with Fallback)
+- **Primary**: Firebase Firestore (cloud, real-time, scalable)
+- **Fallback**: SQLite (`assistant.db`, local, zero-config)
+- **Auto-switch**: `firebase_db.py` tries Firestore first, falls back silently to SQLite
+- **Tables/Collections**: users, tasks, reminders, memories, expenses, notes, projects, chat_history
+
+### 5. Background Workers (asyncio tasks)
+- **Reminder Worker**: Checks due reminders every 30s, sends notifications, handles recurring
+- **Morning Briefing Worker**: Sends daily briefing at user-configured time (Cairo TZ)
+- **Health Server**: HTTP server on PORT (default 8080) for Render/UptimeRobot — `/` returns "OK"
+
+### 6. Multimodal Input Support
+- **Voice**: OGG/Opus → Gemini Audio Transcription (Arabic/English)
+- **Images**: JPEG/PNG → Gemini Vision (OCR, receipt parsing, schedule extraction, diagram explanation)
+
+### 7. Conversation History
+- **Storage**: `chat_history` table/collection (user_id, role, content, created_at)
+- **Retrieval**: Firestore `order_by(created_at DESC).limit(N)` + reverse → oldest-first
+- **Truncation**: Token-aware (≈4 chars/token), keeps newest exchanges under 2000 tokens
+- **Atomic Persist**: User + Model messages saved together or neither
+
+### 8. Configuration (.env)
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `BOT_TOKEN` | ✅ | Telegram Bot API token |
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
+| `FIREBASE_CREDENTIALS_JSON` | ❌ | Firestore service account (JSON string) |
+| `FIREBASE_KEY_PATH` | ❌ | Path to firebase_key.json file |
+| `PORT` | ❌ | Health check port (default 8080) |
+
+### 9. Error Handling Strategy
+- **Model Fallback**: 3-model chain, logs each failure, tries next
+- **DB Fallback**: Firestore → SQLite automatic
+- **Graceful Degradation**: Formatting fallback (HTML → plain text), typing indicator best-effort
+- **Logging**: Structured with component tags `[VOICE]`, `[PHOTO]`, `[AI AGENT]`, `[BRIEFING]`, etc.
+
+### 10. Deployment Target
+- **Render.com** (Free tier): Web Service + Background Worker
+- **Health Check**: HTTP GET `/` → 200 OK
+- **Timezone**: Africa/Cairo (ZoneInfo)
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DIAGNOSTIC TOOL — يمكن للـ AI يستدعيها لفحص حالة النظام
+# ═══════════════════════════════════════════════════════════════════════════
+def diagnose_system() -> dict:
+    """
+    Comprehensive system self-diagnosis.
+    Returns structured health report of all components.
+    """
+    import firebase_db
+    import database as sqlite_db
+
+    now = datetime.now(CAIRO_TZ)
+
+    # Config checks
+    config = {
+        "bot_token": bool(os.getenv("BOT_TOKEN")),
+        "gemini_api_key": bool(os.getenv("GEMINI_API_KEY")),
+        "firebase_creds": bool(os.getenv("FIREBASE_CREDENTIALS_JSON") or os.getenv("FIREBASE_KEY_PATH")),
+        "port": os.getenv("PORT", "8080"),
+    }
+
+    # Firebase status
+    firebase_active = firebase_db.is_firebase_active()
+
+    # SQLite status
+    sqlite_path = os.path.join(os.path.dirname(__file__), "assistant.db")
+    sqlite_exists = os.path.exists(sqlite_path)
+
+    # Python environment
+    python_info = {
+        "version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "executable": sys.executable,
+    }
+
+    # Import checks
+    imports_ok = {}
+    for mod in ["telegram", "google.genai", "firebase_admin", "dotenv", "zoneinfo"]:
+        try:
+            __import__(mod)
+            imports_ok[mod] = True
+        except ImportError:
+            imports_ok[mod] = False
+
+    return {
+        "timestamp": now.isoformat(),
+        "timezone": "Africa/Cairo",
+        "config": config,
+        "database": {
+            "firestore_active": firebase_active,
+            "sqlite_exists": sqlite_exists,
+            "active_backend": "Firestore" if firebase_active else "SQLite",
+        },
+        "python": python_info,
+        "imports": imports_ok,
+        "architecture_version": "2.4",
+        "components": {
+            "ai_brain": "Gemini (AFC) - 3 model fallback chain",
+            "telegram": "python-telegram-bot v21.6 (async polling)",
+            "data_layer": "Dual: Firestore (primary) + SQLite (fallback)",
+            "workers": "Reminder (30s) + Morning Briefing (daily) + Health Server",
+            "multimodal": "Voice (Gemini Audio) + Vision (Gemini Vision)",
+            "history": "Token-aware truncation (2000 tokens), atomic persist",
+        }
+    }
+
+BASE_SYSTEM_INSTRUCTION = SYSTEM_ARCHITECTURE + """
+
+## 1. Identity and Mission
 # Personal AI Assistant — Master System Prompt
 
 ## 1. Identity and Mission
@@ -403,7 +545,8 @@ class UserAIAgent:
             self.note_tool,
             self.daily_briefing_tool,
             self.briefing_settings_tool,
-            self.calendar_tool
+            self.calendar_tool,
+            diagnose_system  # Self-diagnosis tool
         ]
 
         # Prepare message content (multimodal if image is supplied)

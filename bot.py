@@ -25,6 +25,7 @@ from handlers import (
     memory_cmd,
     status_cmd,
     clear_cmd,
+    diagnose_cmd,
     handle_message,
     handle_voice,
     handle_photo,
@@ -101,6 +102,7 @@ async def main():
     app.add_handler(CommandHandler("expenses",      expenses_cmd))
     app.add_handler(CommandHandler("memory",        memory_cmd))
     app.add_handler(CommandHandler("status",        status_cmd))
+    app.add_handler(CommandHandler("diagnose",      diagnose_cmd))
     app.add_handler(CommandHandler("clear",         clear_cmd))
     app.add_handler(CommandHandler("reset",         clear_cmd))
 
