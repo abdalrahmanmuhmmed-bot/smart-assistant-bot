@@ -221,7 +221,7 @@ async def memory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض حالة السيرفر وقاعدة البيانات السحابية الحالية"""
+    """عرض حالة السيرفر وقاعدة البيانات السحابية الحالية + تشخيص ذاتي"""
     user_id = update.effective_user.id
     user = update.effective_user
     if user:
@@ -230,20 +230,49 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import firebase_db
     is_cloud = firebase_db.is_firebase_active()
     db_name = "Cloud Firestore ☁️" if is_cloud else "SQLite (Local) 📁"
-    tasks_count = len(database.list_tasks(user_id))
+
+    # Get counts
+    tasks = database.list_tasks(user_id)
+    tasks_count = len(tasks)
     rems_count = len(database.list_pending_reminders(user_id))
+    memories_count = len(database.list_memories(user_id))
+    expenses_summary = database.get_expenses_summary(user_id)
+
+    # Chat history stats
+    chat_history = database.get_recent_chat_history(user_id, limit=50)
+    chat_count = len(chat_history)
+
+    # Settings
     settings = database.get_user_settings(user_id)
     b_status = f"مفعّل يومياً في {settings.get('briefing_time', '08:30')} 🌅" if settings.get("briefing_enabled") else "معطّل 🔴"
+    cal_linked = "✅ مرتبط" if settings.get("google_calendar_id") else "❌ غير مربوط"
     now_str = database.get_current_time_cairo().strftime("%I:%M %p - %Y-%m-%d")
 
+    # Priority breakdown
+    priority_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    for t in tasks:
+        p = t.get("priority", "Medium")
+        if p in priority_counts:
+            priority_counts[p] += 1
+
+    # Health checks
+    gemini_configured = bool(os.getenv("GEMINI_API_KEY"))
+    bot_token_configured = bool(os.getenv("BOT_TOKEN"))
+
     msg = (
-        f"🟢 <b>حالة المساعد الذكي</b>\n\n"
-        f"• <b>قاعدة البيانات:</b> {db_name}\n"
-        f"• <b>الإيجاز الصباحي:</b> {b_status}\n"
-        f"• <b>المهام النشطة:</b> {tasks_count} مهمة\n"
-        f"• <b>التذكيرات القادمة:</b> {rems_count} تذكير\n"
-        f"• <b>التوقيت الحالي (القاهرة):</b> {now_str}\n"
-        f"• <b>الإصدار:</b> v2.3 (Proactive Briefing)"
+        f"🟢 <b>حالة المساعد الذكي — تشخيص ذاتي</b>\n\n"
+        f"📊 <b>قاعدة البيانات:</b> {db_name}\n"
+        f"🔑 <b>Gemini API:</b> {'✅ مضبوط' if gemini_configured else '❌ مفتاح مفقود'}\n"
+        f"🤖 <b>Bot Token:</b> {'✅ مضبوط' if bot_token_configured else '❌ مفقود'}\n"
+        f"📅 <b>Google Calendar:</b> {cal_linked}\n\n"
+        f"📋 <b>المهام ({tasks_count}):</b> 🔥{priority_counts['Critical']} ⚡{priority_counts['High']} 📌{priority_counts['Medium']} ☕{priority_counts['Low']}\n"
+        f"⏰ <b>التذكيرات:</b> {rems_count} قادمة\n"
+        f"🧠 <b>الذاكرة الدائمة:</b> {memories_count} معلومة\n"
+        f"💰 <b>المصاريف:</b> {expenses_summary['count']} عملية ({expenses_summary['total']:.1f} EGP)\n"
+        f"💬 <b>سجل المحادثة:</b> {chat_count} رسالة محفوظة\n\n"
+        f"🌅 <b>الإيجاز الصباحي:</b> {b_status}\n"
+        f"🕐 <b>التوقيت (القاهرة):</b> {now_str}\n"
+        f"🏷️ <b>الإصدار:</b> v2.4 (Self-Aware + Optimized)"
     )
     await send_formatted_reply(update.message, msg)
 
@@ -361,8 +390,11 @@ async def set_calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """مسح سياق المحادثة الأخيرة والبدء من جديد"""
     user_id = update.effective_user.id
-    database.clear_chat_history(user_id)
-    await send_formatted_reply(update.message, "🧹 <b>تم مسح سياق المحادثة الأخيرة بنجاح.</b>\nيمكنك الآن بدء موضوع جديد من الصفر.")
+    success = database.clear_chat_history(user_id)
+    if success:
+        await send_formatted_reply(update.message, "🧹 <b>تم مسح سياق المحادثة الأخيرة بنجاح.</b>\nيمكنك الآن بدء موضوع جديد من الصفر.")
+    else:
+        await send_formatted_reply(update.message, "⚠️ <b>فشل في مسح سياق المحادثة.</b> يرجى المحاولة مرة أخرى أو التواصل مع الدعم.")
 
 
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────

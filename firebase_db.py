@@ -562,12 +562,14 @@ def get_recent_chat_history(user_id: int, limit: int = 10) -> list:
         query = (
             db.collection("chat_history")
             .where(filter=firestore.FieldFilter("user_id", "==", user_id))
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
         )
         docs = query.stream()
-        messages = [d.to_dict() for d in docs]
-        messages.sort(key=lambda x: x.get("created_at", ""))
-        recent = messages[-limit:]
-        return [{"role": m.get("role"), "content": m.get("content")} for m in recent]
+        messages = [{"role": d.to_dict().get("role"), "content": d.to_dict().get("content"), "created_at": d.to_dict().get("created_at")} for d in docs]
+        # Firestore returns DESC, we need ASC (oldest first) for conversation history
+        messages.reverse()
+        return messages
     except Exception as e:
         logger.error(f"Firestore get_recent_chat_history error: {e}")
         return sqlite_db.get_recent_chat_history(user_id, limit)
@@ -579,13 +581,26 @@ def clear_chat_history(user_id: int) -> bool:
         return sqlite_db.clear_chat_history(user_id)
 
     try:
+        # Use batch delete for efficiency
+        batch = db.batch()
         query = db.collection("chat_history").where(filter=firestore.FieldFilter("user_id", "==", user_id))
         docs = query.stream()
+        deleted_count = 0
         for doc in docs:
-            doc.reference.delete()
+            batch.delete(doc.reference)
+            deleted_count += 1
+            # Firestore batch limit is 500 operations
+            if deleted_count % 500 == 0:
+                batch.commit()
+                batch = db.batch()
+        if deleted_count % 500 != 0 or deleted_count == 0:
+            batch.commit()
+
+        # Only clear SQLite if Firestore batch succeeded
         sqlite_db.clear_chat_history(user_id)
         return True
     except Exception as e:
         logger.error(f"Firestore clear_chat_history error: {e}")
-        return sqlite_db.clear_chat_history(user_id)
+        # Don't clear SQLite if Firestore failed - return False to indicate failure
+        return False
 

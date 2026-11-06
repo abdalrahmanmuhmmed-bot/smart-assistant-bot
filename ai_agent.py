@@ -419,18 +419,41 @@ class UserAIAgent:
             "gemini-flash-latest"
         ]
 
+        # Token estimation helper (rough: ~4 chars per token for Arabic/English mixed)
+        def estimate_tokens(text: str) -> int:
+            return max(1, len(text) // 4)
+
+        # Token budget: reserve ~6000 for system prompt + tools + response, leave ~2000 for history
+        MAX_HISTORY_TOKENS = 2000
+
         # Prepare multi-turn conversation history
         recent_history = database.get_recent_chat_history(self.user_id, limit=8)
         history_contents = []
+        valid_roles = {"user", "model"}
         for m in recent_history:
-            role = "user" if m.get("role") == "user" else "model"
+            role = m.get("role")
+            # Validate role - only accept known roles, default to "model" for unknown but log warning
+            if role not in valid_roles:
+                logger.warning(f"[AI AGENT] Unknown role '{role}' in chat history, defaulting to 'model'")
+                role = "model"
             content_text = m.get("content", "").strip()
             if content_text:
                 history_contents.append(
                     types.Content(role=role, parts=[types.Part.from_text(text=content_text)])
                 )
-        while history_contents and history_contents[0].role != "user":
+        # Ensure history starts with user message (required by Gemini API)
+        # But don't strip ALL history if no leading user message - keep at least the last exchange
+        while len(history_contents) > 1 and history_contents[0].role != "user":
             history_contents.pop(0)
+
+        # Token-aware truncation: remove oldest messages if history exceeds token budget
+        history_tokens = sum(estimate_tokens(part.text) for msg in history_contents for part in msg.parts)
+        while history_tokens > MAX_HISTORY_TOKENS and len(history_contents) > 1:
+            # Remove oldest exchange (user + model pair, or single message)
+            removed = history_contents.pop(0)
+            removed_tokens = sum(estimate_tokens(part.text) for part in removed.parts)
+            history_tokens -= removed_tokens
+            logger.debug(f"[AI AGENT] Truncated history: removed {removed_tokens} tokens, remaining {history_tokens}")
 
         last_err = None
         for model_name in models_to_try:
@@ -447,9 +470,13 @@ class UserAIAgent:
                 response = chat.send_message(contents_payload)
                 reply_text = response.text.strip()
 
-                # Persist conversation turn in history
-                database.add_chat_message(self.user_id, "user", user_text)
-                database.add_chat_message(self.user_id, "model", reply_text)
+                # Persist conversation turn in history atomically (both or neither)
+                try:
+                    database.add_chat_message(self.user_id, "user", user_text)
+                    database.add_chat_message(self.user_id, "model", reply_text)
+                except Exception as e:
+                    logger.error(f"[AI AGENT] Failed to persist chat history: {e}")
+                    # Best effort - log but don't fail the response
 
                 return reply_text
             except Exception as e:
