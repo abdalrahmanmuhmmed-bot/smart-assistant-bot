@@ -4,12 +4,29 @@ import logging
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-)
+from telegram import BotCommand
+
+async def set_bot_commands(application):
+    """تعيين الأوامر الرئيسية لتظهر في قائمة تفاعلية في تيليجرام"""
+    commands = [
+        BotCommand("start", "إظهار رسالة الترحيب ودليل الأوامر"),
+        BotCommand("briefing", "الملخص اليومي وأهم الأولويات"),
+        BotCommand("status", "حالة النظام والتشخيص الذاتي السريع"),
+        BotCommand("diagnose", "تقرير تقني مفصل عن مكونات البوت وحالته"),
+        BotCommand("tasks", "قائمة المهام النشطة"),
+        BotCommand("reminders", "التنبيهات المجدولة"),
+        BotCommand("calendar", "تقويم جوجل والمواعيد"),
+        BotCommand("set_calendar", "ربط إيميل تقويم جوجل"),
+        BotCommand("briefing_time", "إعدادات الإيجاز الصباحي التلقائي"),
+        BotCommand("expenses", "ملخص المصاريف"),
+        BotCommand("memory", "الذاكرة الدائمة والتفضيلات"),
+        BotCommand("clear", "مسح سياق المحادثة والبدء من جديد"),
+    ]
+    try:
+        await application.bot.set_my_commands(commands)
+        logger.info("[BOT] Telegram bot commands menu successfully registered.")
+    except Exception as e:
+        logger.warning(f"[BOT] Failed to set bot commands menu: {e}")
 
 from database import init_db
 from scheduler import reminder_worker, morning_briefing_worker
@@ -89,6 +106,9 @@ async def main():
 
     # بناء تطبيق التيليجرام
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # تسجيل الأوامر في القائمة التفاعلية
+    await set_bot_commands(app)
 
     # تسجيل الأوامر
     app.add_handler(CommandHandler("start",         start))
