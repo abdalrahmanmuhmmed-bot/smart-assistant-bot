@@ -538,7 +538,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             agent = UserAIAgent(user_id)
             reply = await agent.process_message(transcribed_text)
 
-            full_reply = f"🎙️ <b>سمعتك بتقول / Heard:</b>\n<i>\"{transcribed_text}\"</i>\n\n{reply}"
+            # Use markdown-style formatting - send_formatted_reply will convert to HTML
+            full_reply = f"🎙️ **سمعتك بتقول / Heard:**\n*\"{transcribed_text}\"*\n\n{reply}"
             await send_formatted_reply(update.message, full_reply)
 
         except Exception as e:
