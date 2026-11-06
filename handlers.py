@@ -41,6 +41,7 @@ def format_for_telegram(text: str) -> str:
 async def send_formatted_to_chat(bot, chat_id: int, text: str):
     """
     Sends message to a specific chat using Telegram HTML parser.
+    Expects markdown-style input (**, *, `, ```), converts to HTML.
     Safely falls back to plain text if parsing fails.
     """
     formatted_html = format_for_telegram(text)
@@ -54,6 +55,7 @@ async def send_formatted_to_chat(bot, chat_id: int, text: str):
 async def send_formatted_reply(message, text: str):
     """
     Sends message using Telegram HTML parser.
+    Expects markdown-style input (**, *, `, ```), converts to HTML.
     If Telegram raises any parsing error, falls back safely to plain text.
     """
     formatted_html = format_for_telegram(text)
@@ -261,19 +263,19 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_token_configured = bool(os.getenv("BOT_TOKEN"))
 
     msg = (
-        f"🟢 <b>حالة المساعد الذكي — تشخيص ذاتي</b>\n\n"
-        f"📊 <b>قاعدة البيانات:</b> {db_name}\n"
-        f"🔑 <b>Gemini API:</b> {'✅ مضبوط' if gemini_configured else '❌ مفتاح مفقود'}\n"
-        f"🤖 <b>Bot Token:</b> {'✅ مضبوط' if bot_token_configured else '❌ مفقود'}\n"
-        f"📅 <b>Google Calendar:</b> {cal_linked}\n\n"
-        f"📋 <b>المهام ({tasks_count}):</b> 🔥{priority_counts['Critical']} ⚡{priority_counts['High']} 📌{priority_counts['Medium']} ☕{priority_counts['Low']}\n"
-        f"⏰ <b>التذكيرات:</b> {rems_count} قادمة\n"
-        f"🧠 <b>الذاكرة الدائمة:</b> {memories_count} معلومة\n"
-        f"💰 <b>المصاريف:</b> {expenses_summary['count']} عملية ({expenses_summary['total']:.1f} EGP)\n"
-        f"💬 <b>سجل المحادثة:</b> {chat_count} رسالة محفوظة\n\n"
-        f"🌅 <b>الإيجاز الصباحي:</b> {b_status}\n"
-        f"🕐 <b>التوقيت (القاهرة):</b> {now_str}\n"
-        f"🏷️ <b>الإصدار:</b> v2.4 (Self-Aware + Optimized)"
+        f"🟢 **حالة المساعد الذكي — تشخيص ذاتي**\n\n"
+        f"📊 **قاعدة البيانات:** {db_name}\n"
+        f"🔑 **Gemini API:** {'✅ مضبوط' if gemini_configured else '❌ مفتاح مفقود'}\n"
+        f"🤖 **Bot Token:** {'✅ مضبوط' if bot_token_configured else '❌ مفقود'}\n"
+        f"📅 **Google Calendar:** {cal_linked}\n\n"
+        f"📋 **المهام ({tasks_count}):** 🔥{priority_counts['Critical']} ⚡{priority_counts['High']} 📌{priority_counts['Medium']} ☕{priority_counts['Low']}\n"
+        f"⏰ **التذكيرات:** {rems_count} قادمة\n"
+        f"🧠 **الذاكرة الدائمة:** {memories_count} معلومة\n"
+        f"💰 **المصاريف:** {expenses_summary['count']} عملية ({expenses_summary['total']:.1f} EGP)\n"
+        f"💬 **سجل المحادثة:** {chat_count} رسالة محفوظة\n\n"
+        f"🌅 **الإيجاز الصباحي:** {b_status}\n"
+        f"🕐 **التوقيت (القاهرة):** {now_str}\n"
+        f"🏷️ **الإصدار:** v2.4 (Self-Aware + Optimized)"
     )
     await send_formatted_reply(update.message, msg)
 
@@ -300,28 +302,28 @@ async def diagnose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             components = diag["components"]
 
             lines = [
-                f"🔬 <b>تقرير التشخيص الذاتي المفصل</b>",
-                f"<i>الوقت: {diag['timestamp'][:19].replace('T', ' ')} (أفريقيا/القاهرة)</i>\n",
-                f"📦 <b>المكونات الأساسية:</b>",
+                f"🔬 **تقرير التشخيص الذاتي المفصل**",
+                f"*الوقت: {diag['timestamp'][:19].replace('T', ' ')} (أفريقيا/القاهرة)*\n",
+                f"📦 **المكونات الأساسية:**",
             ]
 
             for name, desc in components.items():
-                lines.append(f"  • <b>{name}:</b> {desc}")
+                lines.append(f"  • **{name}:** {desc}")
 
             lines.extend([
-                f"\n⚙️ <b>الإعدادات (.env):</b>",
+                f"\n⚙️ **الإعدادات (.env):**",
                 f"  • BOT_TOKEN: {'✅ موجود' if config['bot_token'] else '❌ مفقود'}",
                 f"  • GEMINI_API_KEY: {'✅ موجود' if config['gemini_api_key'] else '❌ مفقود'}",
                 f"  • Firebase Creds: {'✅ موجود' if config['firebase_creds'] else '⚠️ غير مضبوط (سيعمل SQLite)'}",
                 f"  • PORT: {config['port']}",
-                f"\n🗄️ <b>قاعدة البيانات:</b>",
+                f"\n🗄️ **قاعدة البيانات:**",
                 f"  • Backend نشط: {db['active_backend']}",
                 f"  • Firestore: {'✅ متصل' if db['firestore_active'] else '❌ غير متصل'}",
                 f"  • SQLite: {'✅ موجود' if db['sqlite_exists'] else '❌ غير موجود'}",
-                f"\n🐍 <b>بيئة Python:</b>",
+                f"\n🐍 **بيئة Python:**",
                 f"  • الإصدار: {py['version']}",
                 f"  • النظام: {py['platform']}",
-                f"\n📚 <b>المكتبات المستوردة:</b>",
+                f"\n📚 **المكتبات المستوردة:**",
             ])
 
             for mod, ok in imports.items():
@@ -329,8 +331,8 @@ async def diagnose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"  • {mod}: {status}")
 
             lines.extend([
-                f"\n🏷️ <b>إصدار المعمارية:</b> {diag['architecture_version']}",
-                f"\n<i>💡 هذا التقرير يُولد ديناميكياً من معرفة البوت بنفسه (Self-Awareness)</i>"
+                f"\n🏷️ **إصدار المعمارية:** {diag['architecture_version']}",
+                f"\n*💡 هذا التقرير يُولد ديناميكياً من معرفة البوت بنفسه (Self-Awareness)*"
             ])
 
             msg = "\n".join(lines)
@@ -355,16 +357,16 @@ async def briefing_time_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status_txt = "مفعّل 🟢" if settings.get("briefing_enabled") else "معطّل 🔴"
         current_time = settings.get("briefing_time", "08:30")
         msg = (
-            f"🌅 <b>إعدادات الإيجاز الصباحي التلقائي</b>\n\n"
-            f"• <b>الحالة:</b> {status_txt}\n"
-            f"• <b>الموعد الحالي:</b> {current_time} بتوقيت القاهرة\n\n"
+            f"🌅 **إعدادات الإيجاز الصباحي التلقائي**\n\n"
+            f"• **الحالة:** {status_txt}\n"
+            f"• **الموعد الحالي:** {current_time} بتوقيت القاهرة\n\n"
             f"لتغيير الموعد، أرسل:\n"
-            f"<code>/briefing_time 09:00</code> (بصيغة 24 ساعة)\n"
+            f"`/briefing_time 09:00` (بصيغة 24 ساعة)\n"
             f"أو للتعطيل:\n"
-            f"<code>/briefing_time off</code>\n"
+            f"`/briefing_time off`\n"
             f"أو للتفعيل:\n"
-            f"<code>/briefing_time on</code>\n\n"
-            f"<i>(يمكنك أيضاً طلب ذلك في أي وقت بالحديث الطبيعي أو الفويس نوت)</i>"
+            f"`/briefing_time on`\n\n"
+            f"*(يمكنك أيضاً طلب ذلك في أي وقت بالحديث الطبيعي أو الفويس نوت)*"
         )
         await send_formatted_reply(update.message, msg)
         return
@@ -381,9 +383,9 @@ async def briefing_time_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             h, m = int(sub[:2]), int(sub[3:])
             if 0 <= h < 24 and 0 <= m < 60:
                 database.update_user_settings(user_id, briefing_time=sub, briefing_enabled=True)
-                await send_formatted_reply(update.message, f"✅ تم ضبط موعد الإيجاز الصباحي التلقائي يومياً على الساعة <b>{sub}</b> بتوقيت القاهرة 🌅")
+                await send_formatted_reply(update.message, f"✅ تم ضبط موعد الإيجاز الصباحي التلقائي يومياً على الساعة **{sub}** بتوقيت القاهرة 🌅")
                 return
-        await send_formatted_reply(update.message, "⚠️ صيغة غير صحيحة. يرجى كتابة الوقت مثل: <code>/briefing_time 08:30</code>")
+        await send_formatted_reply(update.message, "⚠️ صيغة غير صحيحة. يرجى كتابة الوقت مثل: `/briefing_time 08:30`")
 
 
 async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -395,15 +397,15 @@ async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not cal_id:
         msg = (
-            "📅 <b>ربط تقويم جوجل (Google Calendar):</b>\n\n"
+            "📅 **ربط تقويم جوجل (Google Calendar):**\n\n"
             "لم تقم بربط بريدك على تقويم جوجل بعد.\n\n"
-            "<b>طريقة الربط في دقيقة:</b>\n"
-            "1. افتح تقويم جوجل في المتصفح أو التطبيق: <code>calendar.google.com</code>\n"
+            "**طريقة الربط في دقيقة:**\n"
+            "1. افتح تقويم جوجل في المتصفح أو التطبيق: `calendar.google.com`\n"
             "2. ادخل على إعدادات تقويمك، وفي خانة (مشاركة مع أشخاص محددين) أضف إيميل السيرفر:\n"
-            "<code>firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com</code>\n"
-            "واختر صلاحية: <b>إجراء تغييرات على الأحداث</b>.\n\n"
+            "`firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com`\n"
+            "واختر صلاحية: **إجراء تغييرات على الأحداث**.\n\n"
             "3. ثم أرسل هنا إيميلك:\n"
-            "<code>/set_calendar your_email@gmail.com</code>\n"
+            "`/set_calendar your_email@gmail.com`\n"
             "وسيتم ربط ومزامنة جدولك فوراً! 🚀"
         )
         await send_formatted_reply(update.message, msg)
@@ -412,14 +414,14 @@ async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     events = calendar_service.list_events(calendar_id=cal_id, max_results=10)
     if not events:
         msg = (
-            f"📅 <b>تقويم جوجل المرتبط:</b> <code>{cal_id}</code>\n\n"
+            f"📅 **تقويم جوجل المرتبط:** `{cal_id}`\n\n"
             "لا توجد أحداث أو مواعيد قادمة مسجلة في التقويم حالياً.\n"
-            "تقدر تقولي: <i>'ضيف ميعاد تسليمة كذا على الكاليندر يوم الخميس الساعة 5'</i> وهضيفهالك فوراً!"
+            "تقدر تقولي: *'ضيف ميعاد تسليمة كذا على الكاليندر يوم الخميس الساعة 5'* وهضيفهالك فوراً!"
         )
         await send_formatted_reply(update.message, msg)
         return
 
-    lines = [f"📅 <b>أحداث ومواعيد تقويم جوجل القادمة ({cal_id}):</b>\n"]
+    lines = [f"📅 **أحداث ومواعيد تقويم جوجل القادمة ({cal_id}):**\n"]
     for ev in events:
         start_str = ev.get("start", "")
         try:
@@ -427,7 +429,7 @@ async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             formatted_date = dt.strftime("%d/%m/%Y %I:%M %p")
         except Exception:
             formatted_date = start_str
-        lines.append(f"• <b>{ev.get('summary')}</b>\n  ⏰ {formatted_date}")
+        lines.append(f"• **{ev.get('summary')}**\n  ⏰ {formatted_date}")
 
     await send_formatted_reply(update.message, "\n".join(lines))
 
@@ -437,16 +439,16 @@ async def set_calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
     if not args or "@" not in args[0]:
-        await send_formatted_reply(update.message, "يرجى كتابة بريدك الإلكتروني هكذا:\n<code>/set_calendar your_email@gmail.com</code>")
+        await send_formatted_reply(update.message, "يرجى كتابة بريدك الإلكتروني هكذا:\n`/set_calendar your_email@gmail.com`")
         return
 
     email = args[0].strip().lower()
     database.update_user_settings(user_id, google_calendar_id=email)
     msg = (
-        f"✅ <b>تم حفظ بريد التقويم:</b> <code>{email}</code>\n\n"
-        "تأكد فقط من عمل مشاركة لتقويمك في <code>calendar.google.com</code> مع إيميل الخدمة:\n"
-        "<code>firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com</code>\n"
-        "بصلاحية (إجراء تغييرات على الأحداث) لتبدأ المزامنة الكاملة! 🎯"
+        f"✅ **تم حفظ بريد التقويم:** `{email}`\n\n"
+        "تأكد فقط من عمل مشاركة لتقويمك في `calendar.google.com` مع إيميل الخدمة:\n"
+        "`firebase-adminsdk-fbsvc@smartassistant-52554.iam.gserviceaccount.com`\n"
+        "بصلاحية (**إجراء تغييرات على الأحداث**) لتبدأ المزامنة الكاملة! 🎯"
     )
     await send_formatted_reply(update.message, msg)
 
@@ -456,9 +458,9 @@ async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     success = database.clear_chat_history(user_id)
     if success:
-        await send_formatted_reply(update.message, "🧹 <b>تم مسح سياق المحادثة الأخيرة بنجاح.</b>\nيمكنك الآن بدء موضوع جديد من الصفر.")
+        await send_formatted_reply(update.message, "🧹 **تم مسح سياق المحادثة الأخيرة بنجاح.**\nيمكنك الآن بدء موضوع جديد من الصفر.")
     else:
-        await send_formatted_reply(update.message, "⚠️ <b>فشل في مسح سياق المحادثة.</b> يرجى المحاولة مرة أخرى أو التواصل مع الدعم.")
+        await send_formatted_reply(update.message, "⚠️ **فشل في مسح سياق المحادثة.** يرجى المحاولة مرة أخرى أو التواصل مع الدعم.")
 
 
 # ── معالجة الرسايل النصية ──────────────────────────────────────────────────

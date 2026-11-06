@@ -34,9 +34,9 @@ async def reminder_worker(application):
                 recurring = rem.get("recurring", "none")
 
                 alert_text = (
-                    f"⏰ <b>تنبيه موعد مهم:</b>\n\n"
+                    f"⏰ **تنبيه موعد مهم:**\n\n"
                     f"{text}\n\n"
-                    f"<i>{now_cairo.strftime('%I:%M %p — %d/%m/%Y')}</i>"
+                    f"*{now_cairo.strftime('%I:%M %p — %d/%m/%Y')}*"
                 )
 
                 try:
@@ -101,7 +101,7 @@ async def morning_briefing_worker(application):
                         "4. اختم بكلمة تحفيزية إيجابية ومقتضبة لبدء اليوم بنشاط وطاقة."
                     )
                     reply = await agent.process_message(prompt)
-                    header = "🌅 <b>إيجازك الصباحي اليومي:</b>\n\n"
+                    header = "🌅 **إيجازك الصباحي اليومي:**\n\n"
                     await send_formatted_to_chat(application.bot, user_id, header + reply)
                     logger.info(f"[SCHEDULER] Successfully sent morning briefing to user {user_id}")
                 except Exception as user_err:
