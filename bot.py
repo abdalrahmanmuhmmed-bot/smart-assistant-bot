@@ -5,6 +5,12 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from telegram import BotCommand
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 async def set_bot_commands(application):
     """تعيين الأوامر الرئيسية لتظهر في قائمة تفاعلية في تيليجرام"""
